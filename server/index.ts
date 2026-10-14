@@ -18,7 +18,7 @@ const app = new Hono()
 
 const JOB_COLUMNS = `id, company, role, market, location, url, ats, mode, org, posting_id, fit, difficulty,
   priority, priority_reason, priority_locked, salary_low, salary_high, status, live, live_note, live_checked_at,
-  last_checked, applied_at, dup_of, hold, notes,
+  last_checked, applied_at, dup_of, hold, notes, removed,
   (SELECT COUNT(*) FROM drafts d WHERE d.job_id = jobs.id) AS draft_count`
 
 // Jobs with nothing left to do sink to the bottom. Within a priority level, the
@@ -28,7 +28,7 @@ const JOB_ORDER = `CASE WHEN status = 'applied' OR live = 'closed' THEN 1 ELSE 0
   last_checked DESC, company`
 
 function counts(column: string): Record<string, number> {
-  const rows = db.prepare<[], { k: string; n: number }>(`SELECT ${column} AS k, COUNT(*) AS n FROM jobs GROUP BY 1`).all()
+  const rows = db.prepare<[], { k: string; n: number }>(`SELECT ${column} AS k, COUNT(*) AS n FROM jobs WHERE removed = 0 GROUP BY 1`).all()
   return Object.fromEntries(rows.map((r) => [String(r.k), r.n]))
 }
 
@@ -57,7 +57,7 @@ async function refreshLlm(): Promise<LlmStatus> {
 
 app.get('/api/summary', (c) => {
   const summary: Summary = {
-    jobs: db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM jobs').get()!.n,
+    jobs: db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM jobs WHERE removed = 0').get()!.n,
     byPriority: counts('priority'),
     byMode: counts('mode'),
     byStatus: counts('status'),
@@ -88,6 +88,7 @@ const jobPatch = z.object({
   priority: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).optional(),
   // The only status a person sets by hand: "I applied to this one myself" and its undo.
   status: z.enum(['applied', 'not_started']).optional(),
+  removed: z.boolean().optional(),
   notes: z.string().max(4000).optional(),
 })
 
@@ -97,7 +98,7 @@ app.patch('/api/jobs/:id', async (c) => {
   if (!patch.success) return c.json({ error: 'Invalid change' }, 400)
   if (!db.prepare('SELECT 1 FROM jobs WHERE id = ?').get(id)) return c.json({ error: 'Job not found' }, 404)
 
-  const { priority, status, notes } = patch.data
+  const { priority, status, notes, removed } = patch.data
   if (priority !== undefined) {
     db.prepare("UPDATE jobs SET priority = ?, priority_locked = 1, priority_reason = 'Set by you' WHERE id = ?").run(priority, id)
   }
@@ -106,6 +107,10 @@ app.patch('/api/jobs/:id', async (c) => {
     logEvent(id, 'status', `${status} (set by hand)`)
   }
   if (notes !== undefined) db.prepare('UPDATE jobs SET notes = ? WHERE id = ?').run(notes, id)
+  if (removed !== undefined) {
+    db.prepare('UPDATE jobs SET removed = ? WHERE id = ?').run(removed ? 1 : 0, id)
+    logEvent(id, removed ? 'removed' : 'restored')
+  }
   return c.json(db.prepare<[string], Job>(`SELECT ${JOB_COLUMNS} FROM jobs WHERE id = ?`).get(id))
 })
 

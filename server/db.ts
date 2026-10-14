@@ -74,6 +74,12 @@ db.exec(`
   );
 `)
 
+// Added after the first release: a removed job stays in the table (so a re-import
+// cannot bring it back) but is hidden everywhere unless restored.
+if (!db.prepare<[], { name: string }>('PRAGMA table_info(jobs)').all().some((c) => c.name === 'removed')) {
+  db.exec('ALTER TABLE jobs ADD COLUMN removed INTEGER NOT NULL DEFAULT 0')
+}
+
 export const now = () => new Date().toISOString()
 
 const getSettingStmt = db.prepare<[string], { value: string }>('SELECT value FROM settings WHERE key = ?')

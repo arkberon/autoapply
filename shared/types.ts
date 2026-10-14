@@ -44,6 +44,8 @@ export interface Job {
   dup_of: string | null
   hold: 0 | 1
   notes: string
+  /** Taken off the list by the user; kept so a re-import does not bring it back. */
+  removed: 0 | 1
   draft_count: number
 }
 

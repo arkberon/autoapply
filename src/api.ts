@@ -27,7 +27,10 @@ export const api = {
   summary: () => request<Summary>('/summary'),
   jobs: () => request<Job[]>('/jobs'),
   job: (id: string) => request<JobDetail>(`/jobs/${id}`),
-  patchJob: (id: string, patch: Partial<Pick<Job, 'priority' | 'notes'>> & { status?: 'applied' | 'not_started' }) =>
+  patchJob: (
+    id: string,
+    patch: Partial<Pick<Job, 'priority' | 'notes'>> & { status?: 'applied' | 'not_started'; removed?: boolean },
+  ) =>
     request<Job>(`/jobs/${id}`, 'PATCH', patch),
   questions: () =>
     request<{ questions: Question[]; sectionNotes: Record<string, string>; answers: Answer[] }>('/questions'),

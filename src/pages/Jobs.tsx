@@ -30,6 +30,11 @@ function Detail({ job, onChange }: { job: Job; onChange: (job: Job) => void }) {
 
   const setStatus = async (status: 'applied' | 'not_started') => onChange(await api.patchJob(job.id, { status }))
 
+  const setRemoved = async (removed: boolean) => {
+    if (removed && !window.confirm(`Remove ${job.company} – ${job.role} from your list? You can bring it back with "Show removed".`)) return
+    onChange(await api.patchJob(job.id, { removed }))
+  }
+
   return (
     <div className="detail">
       <dl>
@@ -87,6 +92,13 @@ function Detail({ job, onChange }: { job: Job; onChange: (job: Job) => void }) {
         ) : (
           <button onClick={() => setStatus('applied')}>I applied to this myself</button>
         )}
+        {job.removed ? (
+          <button onClick={() => setRemoved(false)}>Put back on my list</button>
+        ) : (
+          <button className="danger" onClick={() => setRemoved(true)}>
+            Remove from my list
+          </button>
+        )}
       </div>
     </div>
   )
@@ -98,6 +110,7 @@ export function Jobs({ verifying }: { verifying: boolean }) {
   const [mode, setMode] = useState<Mode | ''>('')
   const [search, setSearch] = useState('')
   const [hideDone, setHideDone] = useState(false)
+  const [showRemoved, setShowRemoved] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
 
   const load = useCallback(() => {
@@ -117,14 +130,17 @@ export function Jobs({ verifying }: { verifying: boolean }) {
     const term = search.trim().toLowerCase()
     return jobs.filter(
       (j) =>
+        (showRemoved ? j.removed === 1 : j.removed === 0) &&
         (!priority || j.priority === priority) &&
         (!mode || j.mode === mode) &&
         (!hideDone || (j.live !== 'closed' && j.status !== 'applied')) &&
         (!term || `${j.company} ${j.role} ${j.market} ${j.ats}`.toLowerCase().includes(term)),
     )
-  }, [jobs, priority, mode, search, hideDone])
+  }, [jobs, priority, mode, search, hideDone, showRemoved])
 
-  const count = (p: Priority) => jobs.filter((j) => j.priority === p).length
+  const listed = jobs.filter((j) => !j.removed)
+  const removedCount = jobs.length - listed.length
+  const count = (p: Priority) => listed.filter((j) => j.priority === p).length
 
   return (
     <>
@@ -137,7 +153,7 @@ export function Jobs({ verifying }: { verifying: boolean }) {
       <div className="toolbar">
         <div className="chips">
           <button className={priority === 0 ? 'chip active' : 'chip'} onClick={() => setPriority(0)}>
-            All {jobs.length}
+            All {listed.length}
           </button>
           {PRIORITIES.map((p) => (
             <button key={p} className={priority === p ? 'chip active' : 'chip'} onClick={() => setPriority(p)}>
@@ -158,10 +174,16 @@ export function Jobs({ verifying }: { verifying: boolean }) {
           <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />
           Hide closed and applied
         </label>
+        {(removedCount > 0 || showRemoved) && (
+          <label className="check">
+            <input type="checkbox" checked={showRemoved} onChange={(e) => setShowRemoved(e.target.checked)} />
+            Show removed ({removedCount})
+          </label>
+        )}
       </div>
 
       <p className="muted small">
-        Showing {shown.length} of {jobs.length}
+        Showing {shown.length} of {showRemoved ? removedCount : listed.length}
       </p>
 
       <div className="table-wrap card">
@@ -224,7 +246,9 @@ export function Jobs({ verifying }: { verifying: boolean }) {
             ))}
           </tbody>
         </table>
-        {shown.length === 0 && <p className="empty muted">No jobs match these filters.</p>}
+        {shown.length === 0 && (
+          <p className="empty muted">{showRemoved ? 'No removed jobs.' : 'No jobs match these filters.'}</p>
+        )}
       </div>
     </>
   )

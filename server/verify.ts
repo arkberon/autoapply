@@ -134,7 +134,7 @@ export const verifyProgress = (): VerifyProgress => ({ ...progress })
 export function startVerify(): VerifyProgress {
   if (progress.running) return verifyProgress()
 
-  const jobs = db.prepare<[], Job>("SELECT * FROM jobs WHERE status != 'applied'").all()
+  const jobs = db.prepare<[], Job>("SELECT * FROM jobs WHERE status != 'applied' AND removed = 0").all()
   const save = db.prepare('UPDATE jobs SET live = ?, live_note = ?, live_checked_at = ? WHERE id = ?')
   Object.assign(progress, { running: true, done: 0, total: jobs.length, startedAt: now(), finishedAt: null })
   ashbyBoards.clear()

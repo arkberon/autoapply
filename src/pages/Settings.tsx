@@ -137,8 +137,8 @@ export function Settings({ refresh }: { refresh: () => void }) {
       <section className="card">
         <h2>Job sheet</h2>
         <p className="muted small section-note">
-          Reads the job list again after the sheet changes. Applications already sent, posting checks and priorities you
-          set by hand are kept.
+          Reads the job list again after the sheet changes. Applications already sent, posting checks, priorities you
+          set by hand and jobs you removed are kept.
         </p>
         <button onClick={reimport} disabled={busy === 'import'}>
           {busy === 'import' ? 'Reading…' : 'Re-import job sheet'}
