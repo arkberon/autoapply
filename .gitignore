@@ -1,0 +1,4 @@
+node_modules
+dist
+# Personal data: answers, resume copies and application records stay on this machine.
+data
