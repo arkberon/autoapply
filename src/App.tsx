@@ -3,15 +3,17 @@ import type { Summary } from '../shared/types.ts'
 import { api } from './api.ts'
 import { Home } from './pages/Home.tsx'
 import { Jobs } from './pages/Jobs.tsx'
+import { Links } from './pages/Links.tsx'
 import { Settings } from './pages/Settings.tsx'
 import { Setup } from './pages/Setup.tsx'
 
-export type Tab = 'home' | 'setup' | 'jobs' | 'settings'
+export type Tab = 'home' | 'setup' | 'jobs' | 'links' | 'settings'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'home', label: 'Home' },
   { id: 'setup', label: 'Setup questions' },
   { id: 'jobs', label: 'Jobs' },
+  { id: 'links', label: 'Links' },
   { id: 'settings', label: 'Settings' },
 ]
 
@@ -67,6 +69,7 @@ export function App() {
             <button key={t.id} className={tab === t.id ? 'tab active' : 'tab'} onClick={() => go(t.id)}>
               {t.label}
               {t.id === 'setup' && setupLeft > 0 && <span className="count">{setupLeft}</span>}
+              {t.id === 'links' && (summary?.pages.withNew ?? 0) > 0 && <span className="count new">{summary!.pages.withNew}</span>}
             </button>
           ))}
         </nav>
@@ -77,6 +80,7 @@ export function App() {
         {summary && tab === 'home' && <Home summary={summary} go={go} refresh={refresh} />}
         {tab === 'setup' && <Setup onSaved={refresh} />}
         {summary && tab === 'jobs' && <Jobs summary={summary} busy={verifying} refresh={refresh} />}
+        {tab === 'links' && <Links refresh={refresh} />}
         {summary && tab === 'settings' && <Settings refresh={refresh} />}
       </main>
     </>

@@ -17,6 +17,7 @@ Everything runs on your own computer. Your answers live in a local database, and
 | 📝 **Asks once, reuses forever** | About 50 common application questions, answered once and saved. |
 | 📄 **Always the latest resume** | Link a Google Doc; a fresh PDF is pulled before every run. Edit the doc and you're done. |
 | 🆕 **Finds new jobs by itself** | Searches the job boards of every company on your list and adds matching openings; no spreadsheet needed. |
+| 🔗 **Watches career pages** | Save pages that list many jobs; the app tells you when new postings appear. |
 | 🔎 **Knows what's still open** | Checks each posting against Greenhouse, Ashby, Lever and Workday, so you don't apply to ghosts. |
 | 🎯 **Puts the best bets first** | Ranks every job from *Apply first* to *Long shot* based on resume fit and difficulty. |
 | 🧠 **Private AI** | Uses a local model (Ollama, LM Studio or MLX) to understand form questions. |
@@ -91,6 +92,16 @@ At the top of the Jobs tab, press **Find new jobs**. The app reads the public jo
 - Change what counts as a match under **Settings → Finding new jobs**: title words, words to skip, locations and how recent a posting must be.
 - Tightened a filter? The next search clears earlier finds that no longer match, unless you already touched them (changed the priority, applied or removed).
 - Want a company that isn't on your list? Paste its job board link under **Watch another company**.
+
+### 🔗 Links
+Some of the best leads are pages that list lots of jobs at once, like a staffing agency's job board or a company careers page, and change every week. Paste one under **Follow a careers page**.
+
+- The first check saves everything on the page as your starting point. After that, each check shows only **what's new since you last looked**, so you're not re-reading the same list.
+- The **Links** tab gets a green badge when a followed page has new postings. Pages re-check themselves when you open the tab (if they haven't been checked in six hours), or press **Check all**.
+- Like a new posting? **Add to my jobs** puts it on your Jobs list. When you're done reading, press **Mark as seen**.
+- **Rename or add a note** to remember who to contact or what to look for.
+
+Pages that load their jobs with JavaScript can't be read this way; the app will say so, and you can still keep them here as a bookmark.
 
 ### ⚙️ Settings
 - **Resume:** paste your Google Docs link. The doc must be shared as *Anyone with the link can view*.

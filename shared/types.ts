@@ -119,6 +119,27 @@ export interface DiscoverSettings {
   maxAgeDays: number
 }
 
+export interface PageLink {
+  url: string
+  text: string
+}
+
+/** A saved career page that lists several jobs and changes over time. */
+export interface SavedPage {
+  id: number
+  url: string
+  name: string
+  note: string
+  addedAt: string
+  checkedAt: string | null
+  /** When a check last found links that were not there before. */
+  changedAt: string | null
+  error: string
+  linkCount: number
+  /** Links added since the user last marked the page as seen. */
+  newLinks: (PageLink & { onList: boolean })[]
+}
+
 export interface Summary {
   jobs: number
   byPriority: Record<string, number>
@@ -130,6 +151,7 @@ export interface Summary {
   llm: LlmStatus
   verify: VerifyProgress
   discover: DiscoverProgress & { boards: number; found: number }
+  pages: { followed: number; withNew: number }
   /** When posting status was last checked; survives restarts, unlike the in-memory progress. */
   lastChecked: string | null
 }

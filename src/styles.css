@@ -460,6 +460,94 @@ label {
   color: var(--muted);
 }
 
+/* ── Links */
+
+.count.new {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.links-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px 0 12px;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.page-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.page-title h2 {
+  margin: 0 0 2px;
+}
+
+.page-title .tag {
+  vertical-align: middle;
+}
+
+.page-actions,
+.page-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.page-footer {
+  margin-top: 14px;
+}
+
+.page-note {
+  margin: 10px 0 0;
+}
+
+.page textarea {
+  margin-top: 10px;
+}
+
+.new-links {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.new-links li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.new-links li:last-child {
+  border-bottom: 0;
+}
+
+.link-add {
+  flex: none;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+@media (max-width: 720px) {
+  .page-head {
+    flex-direction: column;
+  }
+}
+
 /* ── Setup questions */
 
 .progress {
