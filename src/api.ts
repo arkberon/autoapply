@@ -42,6 +42,7 @@ export const api = {
     patch: Partial<Pick<Job, 'priority' | 'notes'>> & { status?: 'applied' | 'not_started'; removed?: boolean },
   ) =>
     request<Job>(`/jobs/${id}`, 'PATCH', patch),
+  removeJobs: (ids: string[]) => request<{ removed: number }>('/jobs/remove', 'POST', { ids }),
   questions: () =>
     request<{ questions: Question[]; sectionNotes: Record<string, string>; answers: Answer[] }>('/questions'),
   saveAnswer: (key: string, value: string) => request<{ setup: Summary['setup'] }>(`/answers/${key}`, 'PUT', { value }),

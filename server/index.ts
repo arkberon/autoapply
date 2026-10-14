@@ -120,6 +120,16 @@ app.patch('/api/jobs/:id', async (c) => {
   return c.json(db.prepare<[string], Job>(`SELECT ${JOB_COLUMNS} FROM jobs WHERE id = ?`).get(id))
 })
 
+// Bulk removal for the clean-up tool. Applied jobs are never removed this way.
+app.post('/api/jobs/remove', async (c) => {
+  const body = z.object({ ids: z.array(z.string().max(200)).max(5000) }).safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'Invalid list' }, 400)
+  const remove = db.prepare("UPDATE jobs SET removed = 1 WHERE id = ? AND removed = 0 AND status != 'applied'")
+  const removed = db.transaction((ids: string[]) => ids.reduce((n, id) => n + remove.run(id).changes, 0))(body.data.ids)
+  logEvent(null, 'cleanup', `${removed} jobs removed`)
+  return c.json({ removed })
+})
+
 app.get('/api/questions', (c) => {
   const answers = db.prepare<[], Answer>('SELECT key, value, source, updated_at FROM answers').all()
   return c.json({ questions: QUESTIONS, sectionNotes: SECTION_NOTES, answers })
