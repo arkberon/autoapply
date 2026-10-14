@@ -77,8 +77,12 @@ Your whole list, in the order the app will work through it.
 - **Filter** by priority, by how a job gets applied, or search for a company.
 - **Change a priority** with the dropdown on the left of any row. Your choice sticks.
 - **Click a row** to see why it got its priority, the salary, whether the posting is open, and any answers already drafted for it.
-- **I applied to this myself** marks a job done so the app never applies to it twice.
-- **Remove from my list** hides a job you don't want. Re-importing the sheet won't bring it back; tick **Show removed** to restore it.
+- Switch between **To apply**, **Applied** (newest first, with the date) and **Removed** at the top of the list.
+- **I applied to this myself** moves a job to Applied so the app never applies to it twice.
+- **Remove from my list** moves a job you don't want to Removed. Re-importing the sheet won't bring it back; open it there and press **Put back on my list** to restore it.
+
+### 🧹 Clean up
+On the **To apply** view, press **Clean up…** and type words that don't fit what you're looking for, such as `sales, nurse, mechanical`. The app shows every job those words would remove *before* anything happens, then removes them in one click. It matches whole words in job titles (and company names, if you tick the box), and can also sweep out postings that have closed. Applied jobs are never touched, and everything removed can be restored. Your words are remembered for next time.
 
 ### 🆕 Finding new jobs
 At the top of the Jobs tab, press **Find new jobs**. The app reads the public job boards (Greenhouse, Ashby and Lever) of every company already on your list and adds openings that match your filters. They show up with a green **New** tag, and the **Found by the app** chip lists only those.
