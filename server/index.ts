@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { APP_DIR, db, getSetting, logEvent, now, setSetting } from './db.ts'
 import { addBoard, discoverProgress, discoverSettings, DISCOVER_DEFAULTS, parseBoardUrl, startDiscover, watchedBoards } from './discover.ts'
 import { runImport } from './import.ts'
+import { addLinkAsJob, addPage, checkAllPages, checkPage, deletePage, listPages, markSeen, updatePage } from './links.ts'
 import { DEFAULT_LLM_BASE_URL, llmConfig, testLlm } from './llm.ts'
 import { QUESTIONS, SECTION_NOTES } from './questions.ts'
 import { docIdFromUrl, resumeInfo, syncResume } from './resume.ts'
@@ -72,6 +73,10 @@ app.get('/api/summary', (c) => {
       boards: watchedBoards().length,
       found: db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM jobs WHERE discovered_at IS NOT NULL AND removed = 0').get()!.n,
     },
+    pages: (() => {
+      const pages = listPages()
+      return { followed: pages.length, withNew: pages.filter((p) => p.newLinks.length > 0).length }
+    })(),
     lastChecked: db.prepare<[], { at: string | null }>('SELECT MAX(live_checked_at) AS at FROM jobs').get()!.at,
   }
   return c.json(summary)
@@ -128,6 +133,58 @@ app.post('/api/jobs/remove', async (c) => {
   const removed = db.transaction((ids: string[]) => ids.reduce((n, id) => n + remove.run(id).changes, 0))(body.data.ids)
   logEvent(null, 'cleanup', `${removed} jobs removed`)
   return c.json({ removed })
+})
+
+// ── Saved career pages
+
+const pageId = (raw: string) => (/^\d+$/.test(raw) ? Number(raw) : -1)
+
+app.get('/api/pages', (c) => c.json(listPages()))
+app.post('/api/pages/check', async (c) => c.json(await checkAllPages()))
+
+app.post('/api/pages', async (c) => {
+  const body = z
+    .object({ url: z.string().max(1000), name: z.string().max(200).default(''), note: z.string().max(2000).default('') })
+    .safeParse(await c.req.json())
+  if (!body.success || !/^https?:\/\//i.test(body.data.url.trim())) return c.json({ error: 'Paste a full web address starting with https://' }, 400)
+  try {
+    new URL(body.data.url.trim())
+  } catch {
+    return c.json({ error: 'That does not look like a web address.' }, 400)
+  }
+  return c.json(await addPage(body.data.url, body.data.name, body.data.note))
+})
+
+app.patch('/api/pages/:id', async (c) => {
+  const body = z.object({ name: z.string().max(200), note: z.string().max(2000) }).partial().safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'Invalid change' }, 400)
+  const page = updatePage(pageId(c.req.param('id')), body.data)
+  return page ? c.json(page) : c.json({ error: 'Page not found' }, 404)
+})
+
+app.delete('/api/pages/:id', (c) => {
+  deletePage(pageId(c.req.param('id')))
+  return c.json({ ok: true })
+})
+
+app.post('/api/pages/:id/check', async (c) => {
+  const page = await checkPage(pageId(c.req.param('id')))
+  return page ? c.json(page) : c.json({ error: 'Page not found' }, 404)
+})
+
+app.post('/api/pages/:id/seen', (c) => {
+  const page = markSeen(pageId(c.req.param('id')))
+  return page ? c.json(page) : c.json({ error: 'Page not found' }, 404)
+})
+
+app.post('/api/pages/:id/add-job', async (c) => {
+  const body = z.object({ url: z.string().url().max(1000), text: z.string().max(500) }).safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'Invalid link' }, 400)
+  try {
+    return c.json(addLinkAsJob(pageId(c.req.param('id')), body.data))
+  } catch {
+    return c.json({ error: 'Page not found' }, 404)
+  }
 })
 
 app.get('/api/questions', (c) => {

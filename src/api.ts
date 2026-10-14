@@ -5,7 +5,9 @@ import type {
   Job,
   LlmStatus,
   Question,
+  PageLink,
   ResumeInfo,
+  SavedPage,
   Summary,
   VerifyProgress,
 } from '../shared/types.ts'
@@ -43,6 +45,14 @@ export const api = {
   ) =>
     request<Job>(`/jobs/${id}`, 'PATCH', patch),
   removeJobs: (ids: string[]) => request<{ removed: number }>('/jobs/remove', 'POST', { ids }),
+  pages: () => request<SavedPage[]>('/pages'),
+  addPage: (url: string, name = '', note = '') => request<SavedPage>('/pages', 'POST', { url, name, note }),
+  updatePage: (id: number, patch: { name?: string; note?: string }) => request<SavedPage>(`/pages/${id}`, 'PATCH', patch),
+  deletePage: (id: number) => request<{ ok: true }>(`/pages/${id}`, 'DELETE'),
+  checkPage: (id: number) => request<SavedPage>(`/pages/${id}/check`, 'POST'),
+  checkAllPages: () => request<SavedPage[]>('/pages/check', 'POST'),
+  markPageSeen: (id: number) => request<SavedPage>(`/pages/${id}/seen`, 'POST'),
+  addLinkAsJob: (id: number, link: PageLink) => request<{ id: string; added: boolean }>(`/pages/${id}/add-job`, 'POST', link),
   questions: () =>
     request<{ questions: Question[]; sectionNotes: Record<string, string>; answers: Answer[] }>('/questions'),
   saveAnswer: (key: string, value: string) => request<{ setup: Summary['setup'] }>(`/answers/${key}`, 'PUT', { value }),
