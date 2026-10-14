@@ -1,4 +1,14 @@
-import type { Answer, Job, LlmStatus, Question, ResumeInfo, Summary, VerifyProgress } from '../shared/types.ts'
+import type {
+  Answer,
+  DiscoverProgress,
+  DiscoverSettings,
+  Job,
+  LlmStatus,
+  Question,
+  ResumeInfo,
+  Summary,
+  VerifyProgress,
+} from '../shared/types.ts'
 
 async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -37,6 +47,10 @@ export const api = {
   saveAnswer: (key: string, value: string) => request<{ setup: Summary['setup'] }>(`/answers/${key}`, 'PUT', { value }),
   reimport: () => request<{ jobs: number; added: number }>('/import', 'POST'),
   startVerify: () => request<VerifyProgress>('/verify', 'POST'),
+  startDiscover: () => request<DiscoverProgress>('/discover', 'POST'),
+  discoverSettings: () => request<DiscoverSettings & { defaults: DiscoverSettings }>('/discover/settings'),
+  saveDiscoverSettings: (settings: Partial<DiscoverSettings>) => request<DiscoverSettings>('/discover/settings', 'PUT', settings),
+  addBoard: (url: string) => request<{ board: { ats: string; org: string }; boards: number }>('/discover/boards', 'POST', { url }),
   syncResume: () => request<ResumeInfo>('/resume/sync', 'POST'),
   settings: () => request<Settings>('/settings'),
   saveSettings: (settings: Partial<Settings>) => request<{ ok: true }>('/settings', 'PUT', settings),

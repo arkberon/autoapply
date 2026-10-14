@@ -46,6 +46,8 @@ export interface Job {
   notes: string
   /** Taken off the list by the user; kept so a re-import does not bring it back. */
   removed: 0 | 1
+  /** Set when the job was found on a company board by the app rather than imported from the sheet. */
+  discovered_at: string | null
   draft_count: number
 }
 
@@ -97,6 +99,26 @@ export interface VerifyProgress {
   finishedAt: string | null
 }
 
+export interface DiscoverProgress {
+  running: boolean
+  done: number
+  total: number
+  added: number
+  failed: number
+  finishedAt: string | null
+  lastAdded: number
+}
+
+export interface DiscoverSettings {
+  /** Comma-separated words; a title must contain at least one. */
+  include: string
+  /** Comma-separated words; a title containing any of them is skipped. */
+  exclude: string
+  /** Comma-separated places; the posting's location must mention one. */
+  locations: string
+  maxAgeDays: number
+}
+
 export interface Summary {
   jobs: number
   byPriority: Record<string, number>
@@ -107,6 +129,7 @@ export interface Summary {
   resume: ResumeInfo
   llm: LlmStatus
   verify: VerifyProgress
+  discover: DiscoverProgress & { boards: number; found: number }
   /** When posting status was last checked; survives restarts, unlike the in-memory progress. */
   lastChecked: string | null
 }
