@@ -37,8 +37,8 @@ export function App() {
 
   useEffect(refresh, [refresh, tab])
 
-  // While the open-or-closed check runs in the background, keep the numbers moving.
-  const verifying = summary?.verify.running ?? false
+  // While a background check or job search runs, keep the numbers moving.
+  const verifying = (summary?.verify.running || summary?.discover.running) ?? false
   useEffect(() => {
     if (!verifying) return
     const timer = setInterval(refresh, 1500)
@@ -76,7 +76,7 @@ export function App() {
         {error && <p className="banner error">{error}</p>}
         {summary && tab === 'home' && <Home summary={summary} go={go} refresh={refresh} />}
         {tab === 'setup' && <Setup onSaved={refresh} />}
-        {summary && tab === 'jobs' && <Jobs verifying={verifying} />}
+        {summary && tab === 'jobs' && <Jobs summary={summary} busy={verifying} refresh={refresh} />}
         {summary && tab === 'settings' && <Settings refresh={refresh} />}
       </main>
     </>

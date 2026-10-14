@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { LlmStatus, ResumeInfo } from '../../shared/types.ts'
+import type { DiscoverSettings, LlmStatus, ResumeInfo } from '../../shared/types.ts'
 import { api, timeAgo, type Settings as SettingsData } from '../api.ts'
 
 const SERVERS = [
@@ -15,8 +15,17 @@ export function Settings({ refresh }: { refresh: () => void }) {
   const [busy, setBusy] = useState<'' | 'resume' | 'llm' | 'import'>('')
   const [resumeError, setResumeError] = useState('')
   const [importNote, setImportNote] = useState('')
+  const [search, setSearch] = useState<DiscoverSettings | null>(null)
+  const [searchDefaults, setSearchDefaults] = useState<DiscoverSettings | null>(null)
+  const [searchNote, setSearchNote] = useState('')
+  const [boardUrl, setBoardUrl] = useState('')
+  const [boardNote, setBoardNote] = useState('')
 
   useEffect(() => {
+    api.discoverSettings().then(({ defaults, ...current }) => {
+      setSearch(current)
+      setSearchDefaults(defaults)
+    })
     api.settings().then(setSettings)
     api.summary().then((s) => {
       setResume(s.resume)
@@ -49,6 +58,22 @@ export function Settings({ refresh }: { refresh: () => void }) {
     setLlm(await api.testLlm())
     setBusy('')
     refresh()
+  }
+
+  const saveSearch = async (next: DiscoverSettings) => {
+    setSearch(await api.saveDiscoverSettings(next))
+    setSearchNote('Saved. The next search uses these filters.')
+  }
+
+  const addBoard = async () => {
+    try {
+      const { board, boards } = await api.addBoard(boardUrl)
+      setBoardNote(`Added ${board.org} (${board.ats}). Now watching ${boards} company boards.`)
+      setBoardUrl('')
+      refresh()
+    } catch (err) {
+      setBoardNote(err instanceof Error ? err.message : 'Could not add that board.')
+    }
   }
 
   const reimport = async () => {
@@ -133,6 +158,64 @@ export function Settings({ refresh }: { refresh: () => void }) {
         )}
         {llm && <p className={llm.ok ? 'banner ok' : 'banner warn'}>{llm.message}</p>}
       </section>
+
+      {search && searchDefaults && (
+        <section className="card">
+          <h2>Finding new jobs</h2>
+          <p className="muted small section-note">
+            "Find new jobs" on the Jobs tab searches the job boards of every company on your list and adds openings that
+            pass these filters. Separate words with commas.
+          </p>
+          <div className="fields">
+            <div className="field">
+              <label htmlFor="d-include">Title must include one of</label>
+              <textarea id="d-include" rows={3} value={search.include} onChange={(e) => setSearch({ ...search, include: e.target.value })} />
+            </div>
+            <div className="field">
+              <label htmlFor="d-exclude">Skip titles with any of</label>
+              <textarea id="d-exclude" rows={3} value={search.exclude} onChange={(e) => setSearch({ ...search, exclude: e.target.value })} />
+            </div>
+            <div className="field">
+              <label htmlFor="d-locations">Location must mention one of</label>
+              <textarea id="d-locations" rows={3} value={search.locations} onChange={(e) => setSearch({ ...search, locations: e.target.value })} />
+            </div>
+            <div className="field">
+              <label htmlFor="d-age">Only postings from the last (days)</label>
+              <input
+                id="d-age"
+                type="text"
+                inputMode="numeric"
+                value={search.maxAgeDays}
+                onChange={(e) => setSearch({ ...search, maxAgeDays: Number(e.target.value.replace(/\D/g, '')) || 0 })}
+              />
+            </div>
+          </div>
+          <div className="row" style={{ marginTop: 14 }}>
+            <button className="primary" onClick={() => saveSearch({ ...search, maxAgeDays: Math.max(1, search.maxAgeDays) })}>
+              Save filters
+            </button>
+            <button onClick={() => saveSearch(searchDefaults)}>Reset to defaults</button>
+          </div>
+          {searchNote && <p className="muted small">{searchNote}</p>}
+
+          <label htmlFor="d-board" style={{ marginTop: 18 }}>
+            Watch another company
+          </label>
+          <div className="row">
+            <input
+              id="d-board"
+              type="url"
+              value={boardUrl}
+              placeholder="https://jobs.ashbyhq.com/company or a Greenhouse / Lever board link"
+              onChange={(e) => setBoardUrl(e.target.value)}
+            />
+            <button onClick={addBoard} disabled={!boardUrl.trim()}>
+              Add
+            </button>
+          </div>
+          {boardNote && <p className="muted small">{boardNote}</p>}
+        </section>
+      )}
 
       <section className="card">
         <h2>Job sheet</h2>

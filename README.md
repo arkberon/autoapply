@@ -16,6 +16,7 @@ Everything runs on your own computer. Your answers live in a local database, and
 |---|---|
 | 📝 **Asks once, reuses forever** | About 50 common application questions, answered once and saved. |
 | 📄 **Always the latest resume** | Link a Google Doc; a fresh PDF is pulled before every run. Edit the doc and you're done. |
+| 🆕 **Finds new jobs by itself** | Searches the job boards of every company on your list and adds matching openings; no spreadsheet needed. |
 | 🔎 **Knows what's still open** | Checks each posting against Greenhouse, Ashby, Lever and Workday, so you don't apply to ghosts. |
 | 🎯 **Puts the best bets first** | Ranks every job from *Apply first* to *Long shot* based on resume fit and difficulty. |
 | 🧠 **Private AI** | Uses a local model (Ollama, LM Studio or MLX) to understand form questions. |
@@ -79,9 +80,18 @@ Your whole list, in the order the app will work through it.
 - **I applied to this myself** marks a job done so the app never applies to it twice.
 - **Remove from my list** hides a job you don't want. Re-importing the sheet won't bring it back; tick **Show removed** to restore it.
 
+### 🆕 Finding new jobs
+At the top of the Jobs tab, press **Find new jobs**. The app reads the public job boards (Greenhouse, Ashby and Lever) of every company already on your list and adds openings that match your filters. They show up with a green **New** tag, and the **Found by the app** chip lists only those.
+
+- Titles that say *new grad*, *junior*, *entry-level* or *Engineer I* land at **Good chance**; the rest land at **Stretch**, so you can check the requirements.
+- Change what counts as a match under **Settings → Finding new jobs**: title words, words to skip, locations and how recent a posting must be.
+- Tightened a filter? The next search clears earlier finds that no longer match, unless you already touched them (changed the priority, applied or removed).
+- Want a company that isn't on your list? Paste its job board link under **Watch another company**.
+
 ### ⚙️ Settings
 - **Resume:** paste your Google Docs link. The doc must be shared as *Anyone with the link can view*.
 - **Local model:** pick Ollama, LM Studio or MLX, choose a model, then **Test connection**.
+- **Finding new jobs:** the filters for **Find new jobs**, plus extra companies to watch.
 - **Job sheet:** re-import after your job list changes. Your progress, priorities and removals are kept.
 
 ---

@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { z } from 'zod'
 import { APP_DIR, db, getSetting, logEvent, now, setSetting } from './db.ts'
+import { addBoard, discoverProgress, discoverSettings, DISCOVER_DEFAULTS, parseBoardUrl, startDiscover, watchedBoards } from './discover.ts'
 import { runImport } from './import.ts'
 import { DEFAULT_LLM_BASE_URL, llmConfig, testLlm } from './llm.ts'
 import { QUESTIONS, SECTION_NOTES } from './questions.ts'
@@ -18,7 +19,7 @@ const app = new Hono()
 
 const JOB_COLUMNS = `id, company, role, market, location, url, ats, mode, org, posting_id, fit, difficulty,
   priority, priority_reason, priority_locked, salary_low, salary_high, status, live, live_note, live_checked_at,
-  last_checked, applied_at, dup_of, hold, notes, removed,
+  last_checked, applied_at, dup_of, hold, notes, removed, discovered_at,
   (SELECT COUNT(*) FROM drafts d WHERE d.job_id = jobs.id) AS draft_count`
 
 // Jobs with nothing left to do sink to the bottom. Within a priority level, the
@@ -66,6 +67,11 @@ app.get('/api/summary', (c) => {
     resume: resumeInfo(),
     llm: llmStatus,
     verify: verifyProgress(),
+    discover: {
+      ...discoverProgress(),
+      boards: watchedBoards().length,
+      found: db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM jobs WHERE discovered_at IS NOT NULL AND removed = 0').get()!.n,
+    },
     lastChecked: db.prepare<[], { at: string | null }>('SELECT MAX(live_checked_at) AS at FROM jobs').get()!.at,
   }
   return c.json(summary)
@@ -138,6 +144,38 @@ app.post('/api/import', (c) => c.json(runImport()))
 
 app.get('/api/verify', (c) => c.json(verifyProgress()))
 app.post('/api/verify', (c) => c.json(startVerify()))
+
+app.get('/api/discover', (c) => c.json(discoverProgress()))
+app.post('/api/discover', (c) => c.json(startDiscover()))
+
+app.get('/api/discover/settings', (c) => c.json({ ...discoverSettings(), defaults: DISCOVER_DEFAULTS }))
+
+app.put('/api/discover/settings', async (c) => {
+  const body = z
+    .object({
+      include: z.string().max(4000),
+      exclude: z.string().max(4000),
+      locations: z.string().max(4000),
+      maxAgeDays: z.number().int().min(1).max(365),
+    })
+    .partial()
+    .safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'Invalid search settings' }, 400)
+  const { include, exclude, locations, maxAgeDays } = body.data
+  if (include !== undefined) setSetting('discover_include', include)
+  if (exclude !== undefined) setSetting('discover_exclude', exclude)
+  if (locations !== undefined) setSetting('discover_locations', locations)
+  if (maxAgeDays !== undefined) setSetting('discover_max_age_days', String(maxAgeDays))
+  return c.json(discoverSettings())
+})
+
+app.post('/api/discover/boards', async (c) => {
+  const body = z.object({ url: z.string().max(500) }).safeParse(await c.req.json())
+  const board = body.success ? parseBoardUrl(body.data.url) : null
+  if (!board) return c.json({ error: 'Paste a Greenhouse, Ashby or Lever job board link.' }, 400)
+  addBoard(board)
+  return c.json({ board, boards: watchedBoards().length })
+})
 
 app.get('/api/resume', (c) => c.json(resumeInfo()))
 app.post('/api/resume/sync', async (c) => c.json(await syncResume()))

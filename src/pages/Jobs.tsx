@@ -7,6 +7,7 @@ import {
   type Job,
   type Mode,
   type Priority,
+  type Summary,
 } from '../../shared/types.ts'
 import { api, timeAgo, type JobDetail } from '../api.ts'
 
@@ -104,13 +105,14 @@ function Detail({ job, onChange }: { job: Job; onChange: (job: Job) => void }) {
   )
 }
 
-export function Jobs({ verifying }: { verifying: boolean }) {
+export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boolean; refresh: () => void }) {
   const [jobs, setJobs] = useState<Job[]>([])
   const [priority, setPriority] = useState<Priority | 0>(0)
   const [mode, setMode] = useState<Mode | ''>('')
   const [search, setSearch] = useState('')
   const [hideDone, setHideDone] = useState(false)
   const [showRemoved, setShowRemoved] = useState(false)
+  const [onlyFound, setOnlyFound] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
 
   const load = useCallback(() => {
@@ -119,10 +121,15 @@ export function Jobs({ verifying }: { verifying: boolean }) {
 
   useEffect(load, [load])
   useEffect(() => {
-    if (!verifying) return load()
+    if (!busy) return load()
     const timer = setInterval(load, 2500)
     return () => clearInterval(timer)
-  }, [verifying, load])
+  }, [busy, load])
+
+  const findJobs = async () => {
+    await api.startDiscover()
+    refresh()
+  }
 
   const replace = (next: Job) => setJobs((all) => all.map((j) => (j.id === next.id ? next : j)))
 
@@ -131,15 +138,18 @@ export function Jobs({ verifying }: { verifying: boolean }) {
     return jobs.filter(
       (j) =>
         (showRemoved ? j.removed === 1 : j.removed === 0) &&
+        (!onlyFound || j.discovered_at !== null) &&
         (!priority || j.priority === priority) &&
         (!mode || j.mode === mode) &&
         (!hideDone || (j.live !== 'closed' && j.status !== 'applied')) &&
         (!term || `${j.company} ${j.role} ${j.market} ${j.ats}`.toLowerCase().includes(term)),
     )
-  }, [jobs, priority, mode, search, hideDone, showRemoved])
+  }, [jobs, priority, mode, search, hideDone, showRemoved, onlyFound])
 
   const listed = jobs.filter((j) => !j.removed)
   const removedCount = jobs.length - listed.length
+  const foundCount = listed.filter((j) => j.discovered_at).length
+  const { discover } = summary
   const count = (p: Priority) => listed.filter((j) => j.priority === p).length
 
   return (
@@ -149,6 +159,22 @@ export function Jobs({ verifying }: { verifying: boolean }) {
         Every job on your list, in the order the app will work through them. Click a row for details, or change its
         priority on the left.
       </p>
+
+      <div className="card find">
+        <div>
+          <strong>Find new jobs</strong>
+          <span className="muted small">
+            {discover.running
+              ? `Searching ${discover.done} of ${discover.total} company job boards… ${discover.added} new so far.`
+              : discover.finishedAt
+                ? `Last search ${timeAgo(discover.finishedAt)} added ${discover.lastAdded} new job${discover.lastAdded === 1 ? '' : 's'}. Watching ${discover.boards} company boards.`
+                : `Searches the job boards of the ${discover.boards} companies on your list and adds matching openings. Filters are in Settings.`}
+          </span>
+        </div>
+        <button className="primary" onClick={findJobs} disabled={discover.running}>
+          {discover.running ? 'Searching…' : 'Find new jobs'}
+        </button>
+      </div>
 
       <div className="toolbar">
         <div className="chips">
@@ -160,6 +186,11 @@ export function Jobs({ verifying }: { verifying: boolean }) {
               {PRIORITY_LABEL[p]} {count(p)}
             </button>
           ))}
+          {foundCount > 0 && (
+            <button className={onlyFound ? 'chip active' : 'chip'} onClick={() => setOnlyFound(!onlyFound)}>
+              Found by the app {foundCount}
+            </button>
+          )}
         </div>
         <select value={mode} onChange={(e) => setMode(e.target.value as Mode | '')} aria-label="How it applies">
           <option value="">Any method</option>
@@ -220,6 +251,7 @@ export function Jobs({ verifying }: { verifying: boolean }) {
                   </td>
                   <td>
                     <strong>{job.company}</strong>
+                    {job.discovered_at && <span className="tag ok">New {timeAgo(job.discovered_at)}</span>}
                     <span className="role">{job.role}</span>
                     <span className="muted small">{job.market}</span>
                   </td>
