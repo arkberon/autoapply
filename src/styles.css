@@ -548,6 +548,60 @@ label {
   }
 }
 
+/* ── Activity */
+
+.run-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.run-head > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.run-head h2 {
+  margin: 0 0 2px;
+}
+
+.run-head .tag {
+  vertical-align: middle;
+}
+
+.reasons {
+  margin: 12px 0 0;
+  padding-left: 20px;
+  color: var(--warn);
+  font-size: 14px;
+}
+
+.run details {
+  margin-top: 12px;
+}
+
+.answers {
+  margin-top: 8px;
+  font-size: 14px;
+}
+
+.answers td {
+  padding: 7px 10px 7px 0;
+}
+
+.answers td:first-child {
+  width: 42%;
+  color: var(--muted);
+}
+
+.answers td:nth-child(2) {
+  white-space: normal;
+}
+
+.answers td .small {
+  display: block;
+}
+
 /* ── Setup questions */
 
 .progress {

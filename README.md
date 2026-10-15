@@ -6,7 +6,7 @@ You have a spreadsheet of 200+ jobs. Every application asks the same twenty ques
 
 Everything runs on your own computer. Your answers live in a local database, and the AI model runs locally too, so nothing about you is sent to an AI company.
 
-> **Status:** the setup, job list and posting checks work today. Automatic form filling is the next piece being built.
+> **Status:** the application agent can fill real Ashby, Greenhouse and Lever forms in a **dry run** (it stops before submitting). Live submitting, receipts and the daily schedule are the next pieces.
 
 ---
 
@@ -103,6 +103,18 @@ Some of the best leads are pages that list lots of jobs at once, like a staffing
 - **Rename or add a note** to remember who to contact or what to look for.
 
 Pages that load their jobs with JavaScript can't be read this way; the app will say so, and you can still keep them here as a bookmark.
+
+### 🤖 Activity: the application agent
+The agent opens each application in its own Chrome window, reads every question, answers it, uploads your resume and takes a screenshot. Right now it runs as a **dry run**: it never presses submit, and it also blocks any submission the page tries to send.
+
+How it decides each answer, in order:
+1. **Your setup answers.** Legal questions (work authorization, sponsorship, citizenship, criminal history) are *only* ever answered from these.
+2. **Answers already drafted** for that job.
+3. **Your local model**, which picks from the form's own choices or writes a short answer (150 words maximum) using only facts from your resume.
+
+When it can't answer safely, it **parks** the job in *Needs you* and says why: no saved answer, a file it doesn't have, a question about criminal history, or a form that asks whether an AI is filling it in. It won't answer that last one for you either way.
+
+On the **Activity** tab, press **Start dry run**. Each job shows whether it's *Ready to submit* or *Needs you*, every question with the answer and where it came from, and a screenshot of the filled form.
 
 ### ⚙️ Settings
 - **Resume:** paste your Google Docs link. The doc must be shared as *Anyone with the link can view*.

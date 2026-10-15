@@ -1,4 +1,6 @@
 import type {
+  AgentProgress,
+  AgentRun,
   Answer,
   DiscoverProgress,
   DiscoverSettings,
@@ -53,6 +55,8 @@ export const api = {
   checkAllPages: () => request<SavedPage[]>('/pages/check', 'POST'),
   markPageSeen: (id: number) => request<SavedPage>(`/pages/${id}/seen`, 'POST'),
   addLinkAsJob: (id: number, link: PageLink) => request<{ id: string; added: boolean }>(`/pages/${id}/add-job`, 'POST', link),
+  agent: () => request<{ progress: AgentProgress; runs: AgentRun[] }>('/agent'),
+  startDryRun: (limit = 10) => request<AgentProgress>('/agent/dry-run', 'POST', { limit }),
   questions: () =>
     request<{ questions: Question[]; sectionNotes: Record<string, string>; answers: Answer[] }>('/questions'),
   saveAnswer: (key: string, value: string) => request<{ setup: Summary['setup'] }>(`/answers/${key}`, 'PUT', { value }),

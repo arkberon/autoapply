@@ -19,10 +19,25 @@ function headers(apiKey: string): Record<string, string> {
   return { 'content-type': 'application/json', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) }
 }
 
+// Request options the server may not support. Tried richest first; whichever the
+// server accepts is remembered so later calls skip the failed attempts.
+interface Variant {
+  /** The server's strict JSON mode. */
+  json: boolean
+  /** Turn a thinking model's reasoning off; much faster for short answers. */
+  noThinking: boolean
+}
+const VARIANTS: Variant[] = [
+  { json: true, noThinking: true },
+  { json: false, noThinking: true },
+  { json: false, noThinking: false },
+]
+let working: Variant | null = null
+
 /** Asks the model for a JSON object and parses it. Throws when the reply is not valid JSON. */
 export async function chatJson<T>(system: string, user: string, timeoutMs = 120_000): Promise<T> {
   const { baseUrl, model, apiKey } = llmConfig()
-  const ask = (jsonMode: boolean) =>
+  const ask = (v: Variant) =>
     fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: headers(apiKey),
@@ -30,7 +45,8 @@ export async function chatJson<T>(system: string, user: string, timeoutMs = 120_
       body: JSON.stringify({
         model,
         temperature: 0,
-        ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+        ...(v.json ? { response_format: { type: 'json_object' } } : {}),
+        ...(v.noThinking ? { reasoning_effort: 'none' } : {}),
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },
@@ -38,11 +54,16 @@ export async function chatJson<T>(system: string, user: string, timeoutMs = 120_
       }),
     })
 
-  // Not every model supports the server's strict JSON mode; the prompt alone is
-  // enough for those, and the reply is validated either way.
-  let res = await ask(true)
-  if (!res.ok && res.status !== 401) res = await ask(false)
-  if (!res.ok) throw new Error(`Model server answered ${res.status}: ${(await res.text()).slice(0, 200)}`)
+  let res: Response | null = null
+  for (const variant of working ? [working] : VARIANTS) {
+    res = await ask(variant)
+    if (res.ok) {
+      working = variant
+      break
+    }
+    if (res.status === 401) break
+  }
+  if (!res?.ok) throw new Error(`Model server answered ${res?.status}: ${(await res?.text())?.slice(0, 200)}`)
   const body = (await res.json()) as { choices?: { message?: { content?: string } }[] }
   // Some servers leave a thinking model's reasoning inline; the answer is what follows it.
   const text = (body.choices?.[0]?.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '')

@@ -140,6 +140,43 @@ export interface SavedPage {
   newLinks: (PageLink & { onList: boolean })[]
 }
 
+export interface AgentProgress {
+  running: boolean
+  mode: 'dry' | 'live' | null
+  done: number
+  total: number
+  /** "Company · Role" of the job being worked on. */
+  current: string | null
+  startedAt: string | null
+}
+
+export interface AgentAnswer {
+  question: string
+  kind: string
+  required: boolean
+  answer: string[]
+  /** Where the answer came from: saved, draft, model, rule or resume-file. */
+  source: string | null
+  note: string | null
+}
+
+export interface AgentRun {
+  id: number
+  jobId: string
+  company: string
+  role: string
+  ats: string
+  mode: 'dry' | 'live'
+  startedAt: string
+  finishedAt: string | null
+  /** ready = would submit; parked = needs you; closed = posting gone. */
+  outcome: 'running' | 'ready' | 'parked' | 'closed' | 'error' | 'applied'
+  reasons: string[]
+  answers: AgentAnswer[]
+  hasScreenshot: boolean
+  url: string
+}
+
 export interface Summary {
   jobs: number
   byPriority: Record<string, number>

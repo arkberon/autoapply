@@ -2,18 +2,20 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Summary } from '../shared/types.ts'
 import { api } from './api.ts'
 import { Home } from './pages/Home.tsx'
+import { Activity } from './pages/Activity.tsx'
 import { Jobs } from './pages/Jobs.tsx'
 import { Links } from './pages/Links.tsx'
 import { Settings } from './pages/Settings.tsx'
 import { Setup } from './pages/Setup.tsx'
 
-export type Tab = 'home' | 'setup' | 'jobs' | 'links' | 'settings'
+export type Tab = 'home' | 'setup' | 'jobs' | 'links' | 'activity' | 'settings'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'home', label: 'Home' },
   { id: 'setup', label: 'Setup questions' },
   { id: 'jobs', label: 'Jobs' },
   { id: 'links', label: 'Links' },
+  { id: 'activity', label: 'Activity' },
   { id: 'settings', label: 'Settings' },
 ]
 
@@ -81,6 +83,7 @@ export function App() {
         {tab === 'setup' && <Setup onSaved={refresh} />}
         {summary && tab === 'jobs' && <Jobs summary={summary} busy={verifying} refresh={refresh} />}
         {tab === 'links' && <Links refresh={refresh} />}
+        {tab === 'activity' && <Activity />}
         {summary && tab === 'settings' && <Settings refresh={refresh} />}
       </main>
     </>

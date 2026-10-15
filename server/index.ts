@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { APP_DIR, db, getSetting, logEvent, now, setSetting } from './db.ts'
 import { addBoard, discoverProgress, discoverSettings, DISCOVER_DEFAULTS, parseBoardUrl, startDiscover, watchedBoards } from './discover.ts'
 import { runImport } from './import.ts'
+import { agentProgress, listRuns, runScreenshot, startDryRun } from './agent/run.ts'
 import { addLinkAsJob, addPage, checkAllPages, checkPage, deletePage, listPages, markSeen, updatePage } from './links.ts'
 import { DEFAULT_LLM_BASE_URL, llmConfig, testLlm } from './llm.ts'
 import { QUESTIONS, SECTION_NOTES } from './questions.ts'
@@ -185,6 +186,24 @@ app.post('/api/pages/:id/add-job', async (c) => {
   } catch {
     return c.json({ error: 'Page not found' }, 404)
   }
+})
+
+// ── Application agent
+
+app.get('/api/agent', (c) => c.json({ progress: agentProgress(), runs: listRuns() }))
+
+app.post('/api/agent/dry-run', async (c) => {
+  const body = z
+    .object({ limit: z.number().int().min(1).max(30).default(10), jobIds: z.array(z.string().max(200)).max(30).default([]) })
+    .safeParse(await c.req.json().catch(() => ({})))
+  if (!body.success) return c.json({ error: 'Invalid request' }, 400)
+  return c.json(startDryRun(body.data.limit, body.data.jobIds))
+})
+
+app.get('/api/agent/runs/:id/screenshot', (c) => {
+  const file = runScreenshot(Number(c.req.param('id')))
+  if (!file) return c.json({ error: 'No screenshot' }, 404)
+  return c.body(fs.readFileSync(file), 200, { 'content-type': 'image/png' })
 })
 
 app.get('/api/questions', (c) => {

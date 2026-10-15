@@ -114,6 +114,15 @@ export const QUESTIONS: Question[] = [
     required: true,
   },
   {
+    key: 'min_pay',
+    section: 'Availability and pay',
+    label: 'Lowest annual pay you would accept (USD)',
+    help: 'Used for "Is this pay within your range?" questions; hourly pay is counted as 2,080 hours a year. Leave blank to have those wait for you.',
+    type: 'number',
+    placeholder: '45000',
+    required: false,
+  },
+  {
     key: 'relocate',
     section: 'Availability and pay',
     label: 'Are you willing to relocate for a role?',
@@ -171,6 +180,16 @@ export const QUESTIONS: Question[] = [
     label: 'Notice period at your current job',
     type: 'text',
     placeholder: 'Two weeks',
+    required: false,
+  },
+
+  {
+    key: 'languages',
+    section: 'Current work',
+    label: 'Languages you speak fluently',
+    help: 'Used for questions like "Are you fluent in Spanish?". Leave blank to have those wait for you.',
+    type: 'text',
+    placeholder: 'English, Spanish',
     required: false,
   },
 
