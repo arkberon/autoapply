@@ -25,19 +25,54 @@ interface Posting {
 
 const UA = 'Mozilla/5.0 (compatible; autoapply-personal/0.1; job discovery)'
 
+// Places worth searching, grouped into the market labels the job list uses.
+// Each group's cities are added to the default location filter.
+export const REGIONS: { market: string; cities: string[] }[] = [
+  { market: 'NYC', cities: ['new york', 'nyc', 'brooklyn', 'manhattan', 'jersey city', 'hoboken'] },
+  {
+    market: 'SF Bay Area',
+    cities: [
+      'san francisco', 'sf', 'bay area', 'south san francisco', 'oakland', 'berkeley', 'emeryville', 'san mateo',
+      'foster city', 'burlingame', 'redwood city', 'menlo park', 'palo alto', 'mountain view', 'sunnyvale',
+      'santa clara', 'cupertino', 'san jose', 'milpitas', 'fremont',
+    ],
+  },
+  {
+    market: 'Irvine, CA',
+    cities: [
+      'irvine', 'orange county', 'costa mesa', 'newport beach', 'santa ana', 'tustin', 'anaheim', 'lake forest',
+      'aliso viejo', 'huntington beach',
+    ],
+  },
+  {
+    market: 'LA',
+    cities: [
+      'los angeles', 'santa monica', 'culver city', 'venice', 'playa vista', 'marina del rey', 'el segundo',
+      'hawthorne', 'manhattan beach', 'torrance', 'long beach', 'west hollywood', 'beverly hills', 'century city',
+      'burbank', 'pasadena', 'santa clarita', 'thousand oaks', 'westlake village',
+    ],
+  },
+  { market: 'Miami', cities: ['miami', 'fort lauderdale'] },
+]
+
+const REGION_PLACES = new RegExp(
+  `(^|[^a-z0-9])(${REGIONS.flatMap((r) => r.cities).join('|')})($|[^a-z0-9])`,
+  'i',
+)
+
 export const DISCOVER_DEFAULTS: DiscoverSettings = {
   // Role words only. Seniority words such as "new grad" raise priority instead of deciding a match.
   include:
     'software engineer, software developer, web developer, full stack, full-stack, frontend, front-end, front end, backend, back-end, back end, web engineer, mobile engineer, ios engineer, android engineer, product engineer, support engineer, solutions engineer, implementation, technical support, it support, help desk, qa engineer, qa analyst, sdet, software test, automation engineer',
   exclude:
     'senior, sr, sr., staff, principal, lead, manager, director, head of, vp, architect, intern, internship, ii, iii, iv, phd, clearance, hardware, electrical, mechanical, rf, manufacturing, sales',
-  locations:
-    'new york, nyc, brooklyn, manhattan, jersey city, hoboken, los angeles, santa monica, culver city, pasadena, irvine, orange county, costa mesa, newport beach, miami, fort lauderdale, remote',
+  locations: [...REGIONS.flatMap((r) => r.cities), 'remote'].join(', '),
   maxAgeDays: 45,
 }
 
 // "Remote" alone is accepted, but not when the posting names a country outside the US.
-const NON_US = /\b(uk|united kingdom|london|canada|toronto|vancouver|europe|emea|germany|berlin|france|paris|spain|india|bangalore|australia|sydney|singapore|japan|brazil|mexico|latam|south america|argentina|colombia|apac|ireland|dublin|netherlands|amsterdam|poland|israel|philippines)\b/i
+const NON_US =
+  /\b(uk|united kingdom|england|london|canada|toronto|vancouver|montreal|europe|emea|germany|berlin|munich|france|paris|spain|madrid|barcelona|portugal|lisbon|italy|milan|switzerland|zurich|austria|vienna|sweden|stockholm|denmark|copenhagen|norway|finland|netherlands|amsterdam|belgium|ireland|dublin|poland|warsaw|krakow|czech|prague|hungary|romania|bucharest|serbia|belgrade|ukraine|greece|turkey|istanbul|israel|tel aviv|egypt|nigeria|kenya|south africa|india|bangalore|bengaluru|hyderabad|pune|chennai|mumbai|delhi|noida|gurugram|gurgaon|jaipur|pakistan|philippines|manila|vietnam|china|shanghai|hong kong|taiwan|korea|seoul|japan|tokyo|singapore|australia|sydney|melbourne|new zealand|apac|latam|south america|brazil|sao paulo|mexico|argentina|buenos aires|colombia|bogota|chile|peru|uruguay|costa rica)\b/i
 
 const ENTRY_LEVEL = /\b(new grad|graduate|junior|jr\.?|entry[- ]level|early career|associate|engineer i|developer i|level 1|i)\b(?!\w)/i
 
@@ -174,12 +209,9 @@ async function fetchBoard(board: Board): Promise<Posting[] | null> {
 
 /** Picks the lane label the rest of the list uses, from the posting's location text. */
 function marketFor(location: string): string {
-  const l = location.toLowerCase()
-  if (/new york|nyc|brooklyn|manhattan|jersey city|hoboken/.test(l)) return 'NYC'
-  if (/irvine|orange county|costa mesa|newport beach/.test(l)) return 'Irvine, CA'
-  if (/los angeles|santa monica|culver city|pasadena/.test(l)) return 'LA'
-  if (/miami|fort lauderdale/.test(l)) return 'Miami'
-  return 'US remote'
+  // First region named in the location wins, in REGIONS order.
+  const region = REGIONS.find((r) => wordList(r.cities.join(','))!.test(location))
+  return region?.market ?? 'US remote'
 }
 
 function companyName(board: Board, posting: Posting): string {
@@ -229,7 +261,8 @@ export function startDiscover(): DiscoverProgress {
   const fitsFilters = (p: Pick<Posting, 'title' | 'location'>): boolean => {
     if (!include?.test(p.title) || exclude?.test(p.title)) return false
     if (!places?.test(p.location)) return false
-    if (/remote/i.test(p.location) && NON_US.test(p.location) && !/new york|los angeles|miami|irvine/i.test(p.location)) {
+    // A remote role naming only places abroad is skipped; one that also names a city you search keeps.
+    if (/remote/i.test(p.location) && NON_US.test(p.location) && !REGION_PLACES.test(p.location)) {
       return false
     }
     return true
@@ -248,6 +281,11 @@ export function startDiscover(): DiscoverProgress {
   const drop = db.prepare('DELETE FROM jobs WHERE id = ?')
   const dropped = untouched.filter((j) => !fitsFilters({ title: j.role, location: j.location }))
   db.transaction(() => dropped.forEach((j) => drop.run(j.id)))()
+
+  // Market labels come from REGIONS, which can grow; keep earlier finds labelled the same way.
+  const relabel = db.prepare('UPDATE jobs SET market = ? WHERE id = ?')
+  const found = db.prepare<[], { id: string; location: string }>('SELECT id, location FROM jobs WHERE discovered_at IS NOT NULL').all()
+  db.transaction(() => found.forEach((j) => relabel.run(marketFor(j.location), j.id)))()
 
   const queue = [...boards]
   const worker = async () => {
