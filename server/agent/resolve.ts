@@ -208,7 +208,14 @@ const RULES: Rule[] = [
   },
   {
     test: /salary|compensation|pay (range|expectation)|desired (pay|salary)|expected (pay|salary)|base pay/i,
-    answer: (a, _c, f) => (f.kind === 'text' || f.kind === 'textarea' ? a.desired_salary : null),
+    answer: (a, _c, f) => {
+      if (f.kind !== 'text' && f.kind !== 'textarea') return null
+      // The saved figure is yearly; an hourly question gets it divided by a 2,080-hour year.
+      if (/hourly|per hour|an hour|\/\s*h(ou)?r\b/i.test(f.label) && Number(a.desired_salary)) {
+        return `$${Math.round(Number(a.desired_salary) / 2080)}/hour`
+      }
+      return a.desired_salary
+    },
   },
   { test: /how did you (hear|find|learn)|where did you (hear|find|see)|^source$/i, answer: (a) => a.how_heard },
   {
