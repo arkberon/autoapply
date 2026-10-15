@@ -89,6 +89,7 @@ On the **To apply** view, press **Clean up…** and type words that don't fit wh
 At the top of the Jobs tab, press **Find new jobs**. The app reads the public job boards (Greenhouse, Ashby and Lever) of every company already on your list and adds openings that match your filters. They show up with a green **New** tag, and the **Found by the app** chip lists only those.
 
 - Titles that say *new grad*, *junior*, *entry-level* or *Engineer I* land at **Good chance**; the rest land at **Stretch**, so you can check the requirements.
+- Out of the box it searches New York, the San Francisco Bay Area (SF, Oakland, Palo Alto, Mountain View, San Jose and more), Los Angeles and its tech hubs (Santa Monica, Playa Vista, El Segundo, Long Beach and more), Orange County, Miami and US-remote roles.
 - Change what counts as a match under **Settings → Finding new jobs**: title words, words to skip, locations and how recent a posting must be.
 - Tightened a filter? The next search clears earlier finds that no longer match, unless you already touched them (changed the priority, applied or removed).
 - Want a company that isn't on your list? Paste its job board link under **Watch another company**.
