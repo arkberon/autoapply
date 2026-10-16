@@ -109,6 +109,8 @@ Pages that load their jobs with JavaScript can't be read this way; the app will 
 ### 🤖 Activity: the application agent
 The agent opens each application in its own Chrome window, reads every question, answers it, uploads your resume and takes a screenshot. Right now it runs as a **dry run**: it never presses submit, and it also blocks any submission the page tries to send.
 
+It knows the many ways forms ask for the same contact details: street address as one line or in parts, apartment or suite, state as "FL" or "Florida", country as "United States" or "USA", phone type, time zone, middle name, "confirm your email" and similar. Fill in the address section of Setup once and these are covered.
+
 How it decides each answer, in order:
 1. **Your setup answers.** Legal questions (work authorization, sponsorship, citizenship, criminal history) are *only* ever answered from these.
 2. **Answers already drafted** for that job.

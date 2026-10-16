@@ -60,12 +60,44 @@ export function resumeFacts(): string {
   return factsCache
 }
 
+const US_STATES: Record<string, string> = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California', CO: 'Colorado', CT: 'Connecticut',
+  DE: 'Delaware', DC: 'District of Columbia', FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois',
+  IN: 'Indiana', IA: 'Iowa', KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland',
+  MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi', MO: 'Missouri', MT: 'Montana',
+  NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire', NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York',
+  NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania',
+  PR: 'Puerto Rico', RI: 'Rhode Island', SC: 'South Carolina', SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas',
+  UT: 'Utah', VT: 'Vermont', VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming',
+}
+
+const US_NAMES = ['united states', 'united states of america', 'usa', 'us', 'u s', 'u s a', 'america']
+
+/** Other ways a form may spell the same answer: "FL" and "Florida", "United States" and "USA". */
+function equivalents(value: string): string[] {
+  const v = value.trim()
+  const out = [v]
+  const code = v.toUpperCase()
+  if (US_STATES[code]) out.push(US_STATES[code])
+  const byName = Object.entries(US_STATES).find(([, name]) => name.toLowerCase() === v.toLowerCase())
+  if (byName) out.push(byName[0])
+  if (US_NAMES.includes(norm(v))) out.push('United States', 'United States of America', 'USA', 'US')
+  return out
+}
+
 /** Picks the option that says the same thing as `value`, or null if none clearly does. */
 export function matchOption(value: string, options: string[]): string | null {
   if (!value || options.length === 0) return null
   const v = norm(value)
-  const exact = options.find((o) => norm(o) === v)
-  if (exact) return exact
+  for (const alias of equivalents(value)) {
+    const exact = options.find((o) => norm(o) === norm(alias))
+    if (exact) return exact
+  }
+  // "United States +1" in a phone country picker, "Florida (FL)" in a state list.
+  for (const alias of equivalents(value).slice(1)) {
+    const starts = options.filter((o) => norm(o).startsWith(norm(alias) + ' '))
+    if (starts.length === 1) return starts[0]
+  }
 
   if (/^(yes|no)$/.test(v)) {
     const hit = options.filter((o) => new RegExp(`^${v}\\b`).test(norm(o)))
@@ -92,6 +124,12 @@ type Rule = {
 
 const yesIf = (cond: boolean) => (cond ? 'Yes' : 'No')
 
+/** "123 Main St, Apt 4B, Miami, FL 33132", or null when no street is saved. */
+function fullAddress(a: Record<string, string>): string | null {
+  if (!a.address_line1) return null
+  return [a.address_line1, a.address_line2, `${a.city}, ${a.state} ${a.zip}`.trim()].filter(Boolean).join(', ')
+}
+
 const RULES: Rule[] = [
   {
     // Questions that try to catch AI-filled applications. Answering either way would
@@ -102,10 +140,23 @@ const RULES: Rule[] = [
   // Consent to texts must come before the phone rule: these questions mention the phone number too.
   { test: /\bsms\b|text messages?|recruiting messages/i, answer: (a) => a.sms_consent ?? 'No' },
   { test: /preferred (first )?name|nickname/i, answer: (a) => a.preferred_name || a.first_name },
+  { test: /middle (name|initial)/i, answer: (a, _c, f) => (/initial/i.test(f.label) ? (a.middle_name ?? '').slice(0, 1) : a.middle_name ?? '') },
+  {
+    // Nobody on the profile uses a suffix; a required box gets the form's "none" choice or N/A.
+    test: /^(name )?suffix$|suffix \(/i,
+    answer: (_a, _c, f) => (f.required ? (f.options.find((o) => /none|n\/a|not applicable/i.test(o)) ?? (f.options.length ? null : 'N/A')) : ''),
+  },
   { test: /first name|given name/i, answer: (a) => a.first_name },
   { test: /last name|surname|family name/i, answer: (a) => a.last_name },
   { test: /^(full |legal |your )?name$|full name|legal name/i, answer: (a) => `${a.first_name} ${a.last_name}` },
   { test: /e-?mail/i, answer: (a) => a.email },
+  { test: /phone (type|device)|type of (phone|number)|(phone|number) is (a )?(mobile|cell|home)/i, answer: (a) => a.phone_type ?? 'Mobile' },
+  {
+    test: /country code|dial(ing)? code|calling code/i,
+    answer: (a, _c, f) => (US_NAMES.includes(norm(a.country ?? '')) ? (f.options.length ? 'United States' : '+1') : null),
+  },
+  { test: /time ?zone/i, answer: (a) => a.time_zone ?? '' },
+  { test: /(preferred|best) (method|way|means)? ?(of|to)? ?(contact|reach)|how (should|would you like|do you prefer) (we|us to) (contact|reach)/i, answer: (a) => a.preferred_contact ?? 'Email' },
   {
     test: /^(phone|mobile|cell|phone number|mobile number|telephone)( number)?$|^(phone|mobile)\b/i,
     answer: (a, _c, f) => (f.kind === 'text' ? a.phone : null),
@@ -118,8 +169,31 @@ const RULES: Rule[] = [
   { test: /portfolio|personal (web)?site|^website$|personal url|^url$/i, answer: (a) => a.portfolio ?? '' },
   { test: /current (company|employer)|^company$|most recent (company|employer)/i, answer: (a) => a.current_employer },
   { test: /current (job )?title|current (role|position)|most recent title/i, answer: (a) => a.current_title },
+  // ── Address. A one-line full address first (its label names the parts), then each part.
+  {
+    test: /(street|address)\b.{0,40}\bcity\b.{0,40}\b(state|zip|postal)|full (mailing |home )?address|complete (mailing |home )?address/i,
+    answer: (a, _c, f) =>
+      /mailing/i.test(f.label) && a.mailing_same === 'No' ? { park: 'Asks for your separate mailing address' } : fullAddress(a),
+  },
   { test: /zip|postal/i, answer: (a) => a.zip },
-  { test: /street|address line|^address$|home address/i, answer: (a) => a.address_line1 ?? '' },
+  { test: /\bcounty\b/i, answer: (a) => a.county ?? '' },
+  {
+    test: /(mailing|permanent|home).{0,30}(same as|different from)|same as (your )?(home|mailing|permanent|current) address/i,
+    answer: (a) => a.mailing_same ?? 'Yes',
+  },
+  {
+    test: /(address|mailing|home|residence)\b[^?]{0,12}\bstate\b|^state\b|state of residence|state (do you|you) (live|reside)|which state/i,
+    answer: (a) => a.state,
+  },
+  {
+    test: /address line 2|address 2\b|\bapt\b|apartment|apt\s*\/\s*suite|suite\s*\/\s*apt|suite (number|no|#)|unit (number|no|#)/i,
+    answer: (a) => a.address_line2 ?? '',
+  },
+  {
+    test: /address line 1|address 1\b|street|^(mailing|home|permanent|residential|current|physical)? ?address:?$/i,
+    answer: (a, _c, f) =>
+      /mailing/i.test(f.label) && a.mailing_same === 'No' ? { park: 'Asks for your separate mailing address' } : a.address_line1 ?? '',
+  },
   { test: /\bpronoun/i, answer: () => '' },
 
   // ── Legal
@@ -179,7 +253,7 @@ const RULES: Rule[] = [
 
   // ── Location and logistics
   { test: /\bcountry\b/i, answer: (a) => a.country },
-  { test: /^(state|state\/province|province|state or province)$/i, answer: (a) => a.state },
+  { test: /^(state\/province|province|state or province)$/i, answer: (a) => a.state },
   { test: /^(mailing |home )?(address:? )?city$|\bcity:?$/i, answer: (a) => a.city },
   {
     test: /\bcity\b|current location|^location$|where are you (located|based)|where do you (live|reside)|location \(city/i,
