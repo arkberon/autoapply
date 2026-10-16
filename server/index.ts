@@ -6,6 +6,7 @@ import path from 'node:path'
 import { z } from 'zod'
 import { APP_DIR, db, getSetting, logEvent, now, setSetting } from './db.ts'
 import { addBoard, discoverProgress, discoverSettings, DISCOVER_DEFAULTS, parseBoardUrl, startDiscover, watchedBoards } from './discover.ts'
+import { classifyPending } from './areas.ts'
 import { runImport } from './import.ts'
 import { agentProgress, listRuns, runScreenshot, startDryRun } from './agent/run.ts'
 import { addLinkAsJob, addPage, checkAllPages, checkPage, deletePage, listPages, markSeen, updatePage } from './links.ts'
@@ -13,7 +14,7 @@ import { DEFAULT_LLM_BASE_URL, llmConfig, testLlm } from './llm.ts'
 import { QUESTIONS, SECTION_NOTES } from './questions.ts'
 import { docIdFromUrl, resumeInfo, syncResume } from './resume.ts'
 import { startVerify, verifyProgress } from './verify.ts'
-import type { Answer, Job, LlmStatus, Summary } from '../shared/types.ts'
+import { WORK_AREAS, type Answer, type Job, type LlmStatus, type Summary } from '../shared/types.ts'
 
 process.chdir(APP_DIR)
 
@@ -21,7 +22,7 @@ const app = new Hono()
 
 const JOB_COLUMNS = `id, company, role, market, location, url, ats, mode, org, posting_id, fit, difficulty,
   priority, priority_reason, priority_locked, salary_low, salary_high, status, live, live_note, live_checked_at,
-  last_checked, applied_at, dup_of, hold, notes, removed, discovered_at,
+  last_checked, applied_at, dup_of, hold, notes, removed, discovered_at, area, area_source,
   (SELECT COUNT(*) FROM drafts d WHERE d.job_id = jobs.id) AS draft_count`
 
 // Jobs with nothing left to do sink to the bottom. Within a priority level, the
@@ -65,6 +66,7 @@ app.get('/api/summary', (c) => {
     byMode: counts('mode'),
     byStatus: counts('status'),
     byLive: counts('live'),
+    byArea: counts("COALESCE(area, 'Other')"),
     setup: setupProgress(),
     resume: resumeInfo(),
     llm: llmStatus,
@@ -102,6 +104,7 @@ const jobPatch = z.object({
   status: z.enum(['applied', 'not_started']).optional(),
   removed: z.boolean().optional(),
   notes: z.string().max(4000).optional(),
+  area: z.enum(WORK_AREAS).optional(),
 })
 
 app.patch('/api/jobs/:id', async (c) => {
@@ -110,7 +113,8 @@ app.patch('/api/jobs/:id', async (c) => {
   if (!patch.success) return c.json({ error: 'Invalid change' }, 400)
   if (!db.prepare('SELECT 1 FROM jobs WHERE id = ?').get(id)) return c.json({ error: 'Job not found' }, 404)
 
-  const { priority, status, notes, removed } = patch.data
+  const { priority, status, notes, removed, area } = patch.data
+  if (area !== undefined) db.prepare("UPDATE jobs SET area = ?, area_source = 'you', area_locked = 1 WHERE id = ?").run(area, id)
   if (priority !== undefined) {
     db.prepare("UPDATE jobs SET priority = ?, priority_locked = 1, priority_reason = 'Set by you' WHERE id = ?").run(priority, id)
   }
@@ -226,7 +230,11 @@ app.put('/api/answers/:key', async (c) => {
   return c.json({ setup: setupProgress() })
 })
 
-app.post('/api/import', (c) => c.json(runImport()))
+app.post('/api/import', (c) => {
+  const result = runImport()
+  void classifyPending()
+  return c.json(result)
+})
 
 app.get('/api/verify', (c) => c.json(verifyProgress()))
 app.post('/api/verify', (c) => c.json(startVerify()))
@@ -316,6 +324,8 @@ if (db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM jobs').get()!.n ===
   console.log(`Imported ${result.jobs} jobs from the job sheet.`)
 }
 void syncResume()
+// Sort any job that has no work area yet, including everything already on the list.
+void classifyPending()
 void refreshLlm()
 
 const port = Number(process.env.PORT ?? 4310)

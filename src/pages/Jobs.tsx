@@ -8,6 +8,8 @@ import {
   type Mode,
   type Priority,
   type Summary,
+  type WorkArea,
+  WORK_AREAS,
 } from '../../shared/types.ts'
 import { api, timeAgo, type JobDetail } from '../api.ts'
 import { Cleanup } from './Cleanup.tsx'
@@ -48,6 +50,22 @@ function Detail({ job, onChange }: { job: Job; onChange: (job: Job) => void }) {
       <dl>
         <dt>Why this priority</dt>
         <dd>{job.priority_reason}</dd>
+        <dt>Work area</dt>
+        <dd>
+          <select
+            className="area-select"
+            value={job.area ?? 'Other'}
+            aria-label="Work area"
+            onChange={async (e) => onChange(await api.patchJob(job.id, { area: e.target.value as WorkArea }))}
+          >
+            {WORK_AREAS.map((a) => (
+              <option key={a}>{a}</option>
+            ))}
+          </select>
+          <span className="muted small">
+            {job.area_source === 'you' ? ' Set by you' : job.area_source === 'model' ? ' Sorted by your local model' : ' Sorted from the job title'}
+          </span>
+        </dd>
         <dt>Resume fit</dt>
         <dd>{job.fit || 'Not rated'}</dd>
         <dt>Difficulty</dt>
@@ -116,6 +134,7 @@ export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boole
   const [jobs, setJobs] = useState<Job[]>([])
   const [priority, setPriority] = useState<Priority | 0>(0)
   const [mode, setMode] = useState<Mode | ''>('')
+  const [area, setArea] = useState<WorkArea | ''>('')
   const [search, setSearch] = useState('')
   const [view, setView] = useState<View>('todo')
   const [hideClosed, setHideClosed] = useState(false)
@@ -153,12 +172,13 @@ export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boole
         (!onlyFound || j.discovered_at !== null) &&
         (!priority || j.priority === priority) &&
         (!mode || j.mode === mode) &&
+        (!area || (j.area ?? 'Other') === area) &&
         (!hideClosed || j.live !== 'closed') &&
         (!term || `${j.company} ${j.role} ${j.market} ${j.ats}`.toLowerCase().includes(term)),
     )
     // Most recent applications first.
     return view === 'applied' ? list.sort((a, b) => (b.applied_at ?? '').localeCompare(a.applied_at ?? '')) : list
-  }, [jobs, view, priority, mode, search, hideClosed, onlyFound])
+  }, [jobs, view, priority, mode, area, search, hideClosed, onlyFound])
 
   const viewCount = (v: View) => jobs.filter((j) => inView(j, v)).length
   const current = jobs.filter((j) => inView(j, view))
@@ -245,6 +265,14 @@ export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boole
             </button>
           )}
         </div>
+        <select value={area} onChange={(e) => setArea(e.target.value as WorkArea | '')} aria-label="Work area">
+          <option value="">Every work area</option>
+          {WORK_AREAS.filter((a) => current.some((j) => (j.area ?? 'Other') === a)).map((a) => (
+            <option key={a} value={a}>
+              {a} ({current.filter((j) => (j.area ?? 'Other') === a).length})
+            </option>
+          ))}
+        </select>
         <select value={mode} onChange={(e) => setMode(e.target.value as Mode | '')} aria-label="How it applies">
           <option value="">Any method</option>
           {MODES.map((m) => (
@@ -302,7 +330,10 @@ export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boole
                     <strong>{job.company}</strong>
                     {job.discovered_at && <span className="tag ok">New {timeAgo(job.discovered_at)}</span>}
                     <span className="role">{job.role}</span>
-                    <span className="muted small">{job.market}</span>
+                    <span className="muted small">
+                      {job.market}
+                      {job.area && <span className="area-tag">{job.area}</span>}
+                    </span>
                   </td>
                   <td>
                     {MODE_LABEL[job.mode]}

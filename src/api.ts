@@ -43,7 +43,7 @@ export const api = {
   job: (id: string) => request<JobDetail>(`/jobs/${id}`),
   patchJob: (
     id: string,
-    patch: Partial<Pick<Job, 'priority' | 'notes'>> & { status?: 'applied' | 'not_started'; removed?: boolean },
+    patch: Partial<Pick<Job, 'priority' | 'notes' | 'area'>> & { status?: 'applied' | 'not_started'; removed?: boolean },
   ) =>
     request<Job>(`/jobs/${id}`, 'PATCH', patch),
   removeJobs: (ids: string[]) => request<{ removed: number }>('/jobs/remove', 'POST', { ids }),

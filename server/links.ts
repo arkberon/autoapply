@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import { db, logEvent, now } from './db.ts'
+import { classifyPending } from './areas.ts'
 import { detectTarget } from './ats.ts'
 import type { PageLink, SavedPage } from '../shared/types.ts'
 
@@ -213,5 +214,6 @@ export function addLinkAsJob(pageId: number, link: PageLink): { id: string; adde
     raw: JSON.stringify({ fromPage: page.url, ...link }),
   })
   logEvent(id, 'added_from_page', page.url)
+  void classifyPending()
   return { id, added: true }
 }

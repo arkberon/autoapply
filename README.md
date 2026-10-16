@@ -75,7 +75,8 @@ Fill in the fields marked **Needed**; everything else is optional. Answers save 
 ### 📋 Jobs
 Your whole list, in the order the app will work through it.
 
-- **Filter** by priority, by how a job gets applied, or search for a company.
+- **Filter** by priority, by **work area**, by how a job gets applied, or search for a company.
+- **Work areas.** Every job is sorted automatically into an area: Software engineering, IT, QA & testing, Technical support, Customer support, Data & analytics, Field engineering, Construction, Clerical & admin, Implementation & onboarding, Sales & business, Design or Other. Jobs found later are sorted the moment they arrive. The job title decides most of them; your local model sorts the rest from the same list. Open a job to change its area; the app keeps your choice.
 - **Change a priority** with the dropdown on the left of any row. Your choice sticks.
 - **Click a row** to see why it got its priority, the salary, whether the posting is open, and any answers already drafted for it.
 - Switch between **To apply**, **Applied** (newest first, with the date) and **Removed** at the top of the list.

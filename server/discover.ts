@@ -1,3 +1,4 @@
+import { classifyPending } from './areas.ts'
 import { db, getSetting, logEvent, now, setSetting } from './db.ts'
 import type { DiscoverProgress, DiscoverSettings, Priority } from '../shared/types.ts'
 
@@ -359,6 +360,8 @@ export function startDiscover(): DiscoverProgress {
   }
 
   Promise.all(Array.from({ length: 6 }, worker)).finally(() => {
+    // New finds get their work area straight away.
+    void classifyPending()
     const at = now()
     Object.assign(progress, { running: false, finishedAt: at, lastAdded: progress.added })
     setSetting('discover_last_run', at)

@@ -460,6 +460,19 @@ label {
   color: var(--muted);
 }
 
+.area-tag {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 11px;
+}
+
+.area-select {
+  width: auto;
+  padding: 3px 8px;
+}
+
 /* ── Links */
 
 .count.new {

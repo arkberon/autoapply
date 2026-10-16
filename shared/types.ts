@@ -5,6 +5,25 @@ export type Mode = 'auto' | 'review' | 'assist' | 'manual' | 'email'
 
 export type Live = 'open' | 'closed' | 'unknown'
 
+/** Work areas a job can be sorted into. */
+export const WORK_AREAS = [
+  'Software engineering',
+  'IT',
+  'QA & testing',
+  'Technical support',
+  'Customer support',
+  'Data & analytics',
+  'Field engineering',
+  'Construction',
+  'Clerical & admin',
+  'Implementation & onboarding',
+  'Sales & business',
+  'Design',
+  'Other',
+] as const
+
+export type WorkArea = (typeof WORK_AREAS)[number]
+
 export type Status =
   | 'not_started'
   | 'queued'
@@ -48,6 +67,10 @@ export interface Job {
   removed: 0 | 1
   /** Set when the job was found on a company board by the app rather than imported from the sheet. */
   discovered_at: string | null
+  /** Filled in automatically when the job is added; null only until classification runs. */
+  area: WorkArea | null
+  /** rule, model or you. */
+  area_source: string | null
   draft_count: number
 }
 
@@ -183,6 +206,7 @@ export interface Summary {
   byMode: Record<string, number>
   byStatus: Record<string, number>
   byLive: Record<string, number>
+  byArea: Record<string, number>
   setup: { answered: number; required: number; missing: string[] }
   resume: ResumeInfo
   llm: LlmStatus
