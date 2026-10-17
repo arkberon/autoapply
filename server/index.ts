@@ -419,7 +419,8 @@ if (db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM jobs').get()!.n ===
   const result = runImport()
   console.log(`Imported ${result.jobs} jobs from the job sheet.`)
 }
-void syncResume()
+// The demo copy keeps its placeholder resume instead of downloading the real one.
+if (!process.env.AUTOAPPLY_NO_RESUME_SYNC) void syncResume()
 // Posting dates for jobs that have none yet, from what is already known about them.
 backfillPostedAt()
 startScheduler()

@@ -4,7 +4,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-export const DATA_DIR = path.join(APP_DIR, 'data')
+// AUTOAPPLY_DATA_DIR runs the app on another database, such as the demo copy used for videos.
+export const DATA_DIR = process.env.AUTOAPPLY_DATA_DIR ?? path.join(APP_DIR, 'data')
 export const KIT_DIR =
   process.env.KIT_DIR ?? path.resolve(APP_DIR, '../JobListAll/outputs/2026-09-28/AI_application_kit')
 
