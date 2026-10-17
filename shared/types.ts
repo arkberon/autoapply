@@ -207,6 +207,21 @@ export interface AgentRun {
   url: string
 }
 
+export interface ScheduleSettings {
+  enabled: boolean
+  /** Local time, "HH:MM". */
+  time: string
+  weekdaysOnly: boolean
+  /** Find new jobs and re-check postings before applying. */
+  findFirst: boolean
+  notify: boolean
+  /** Local date (YYYY-MM-DD) of the last daily run. */
+  lastRun: string | null
+  nextRun: string | null
+  running: boolean
+  step: string | null
+}
+
 export interface Summary {
   jobs: number
   byPriority: Record<string, number>

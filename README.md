@@ -125,6 +125,10 @@ When it can't answer safely, it **parks** the job in *Needs you* and says why: n
 - A CAPTCHA, a form error or an emailed verification code puts the job in **Needs you**, with the reason. Fix the cause (often a missing Setup answer) and press **Try again**.
 - If it pressed submit but never saw a confirmation, the job shows **Check result** and is never retried on its own. Check your email or the employer site first; trying again could apply twice.
 
+**Daily schedule.** On the **Activity** tab, turn on **Daily schedule** and pick a time (every weekday or every day). At that time the app finds new jobs, re-checks which postings are still open, then applies up to your daily limit, all without asking. The app has to be open and your Mac awake; if you open it later that day, the day's run starts then. Turning it on, or moving the time, after today's time has passed starts from tomorrow.
+
+**Notifications and reports.** After every real run a Mac notification sums it up, for example *Applied to 18 · 3 need you*, and a short report is added to `data/reports/<date>.md` listing what was applied to, what needs you and why. Use **Send a test notification** to check they appear; if not, allow notifications for *Script Editor* in System Settings → Notifications.
+
 **Dry runs** still work the same way: on the **Activity** tab, press **Dry run 10**. Each job shows whether it's *Ready to submit* or *Needs you*, every question with the answer and where it came from, and a screenshot of the filled form.
 
 ### ⚙️ Settings

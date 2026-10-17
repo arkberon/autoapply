@@ -9,6 +9,7 @@ import type {
   Question,
   PageLink,
   ResumeInfo,
+  ScheduleSettings,
   SavedPage,
   Summary,
   VerifyProgress,
@@ -59,6 +60,9 @@ export const api = {
     request<{ progress: AgentProgress; runs: AgentRun[]; today: { applied: number; cap: number; ready: number } }>('/agent'),
   startLive: () => request<AgentProgress>('/agent/live', 'POST', {}),
   stopAgent: () => request<AgentProgress>('/agent/stop', 'POST'),
+  schedule: () => request<ScheduleSettings>('/schedule'),
+  saveSchedule: (patch: Partial<ScheduleSettings>) => request<ScheduleSettings>('/schedule', 'PUT', patch),
+  testNotify: () => request<{ shown: boolean }>('/notify/test', 'POST'),
   setDailyCap: (dailyCap: number) => request<{ cap: number }>('/agent/settings', 'PUT', { dailyCap }),
   startDryRun: (limit = 10) => request<AgentProgress>('/agent/dry-run', 'POST', { limit }),
   questions: () =>

@@ -8,6 +8,7 @@ import { extractFields, type FormField } from './extract.ts'
 import { emptyRequired, fillField, readComboboxOptions } from './fill.ts'
 import { decide, loadAnswers, type Decision, type JobContext } from './resolve.ts'
 import { submitAndConfirm } from './submit.ts'
+import { notify, saveReport, summaryLine, type RunReport } from '../notify.ts'
 import type { AgentProgress, AgentRun, Job } from '../../shared/types.ts'
 
 // The application agent. A dry run fills real forms and stops before submitting:
@@ -288,7 +289,7 @@ function writeReceipt(job: Job, runId: number, result: RunResult, record: unknow
   return file
 }
 
-function runBatch(mode: 'dry' | 'live', jobs: Job[]) {
+function runBatch(mode: 'dry' | 'live', jobs: Job[], trigger: RunReport['trigger'] = 'manual') {
   Object.assign(progress, {
     running: true,
     mode,
@@ -304,6 +305,17 @@ function runBatch(mode: 'dry' | 'live', jobs: Job[]) {
   const finish = db.prepare('UPDATE runs SET finished_at = ?, outcome = ?, reasons = ?, answers = ?, screenshot = ?, receipt = ? WHERE id = ?')
   const setStatus = db.prepare('UPDATE jobs SET status = ?, applied_at = COALESCE(?, applied_at) WHERE id = ?')
   let applied = 0
+  const report: RunReport = {
+    startedAt: now(),
+    finishedAt: now(),
+    trigger,
+    applied: [],
+    needsYou: [],
+    check: [],
+    closed: 0,
+    failed: 0,
+    note: null,
+  }
 
   void (async () => {
     let context: BrowserContext | null = null
@@ -366,9 +378,17 @@ function runBatch(mode: 'dry' | 'live', jobs: Job[]) {
             receipt = writeReceipt(job, runId, result, record, resumePath)
             setStatus.run('applied', now(), job.id)
             applied++
-          } else if (result.outcome === 'uncertain') setStatus.run('uncertain', null, job.id)
-          else if (result.outcome === 'parked') setStatus.run('needs_you', null, job.id)
-          else if (result.outcome === 'error') setStatus.run('failed', null, job.id)
+            report.applied.push({ company: job.company, role: job.role })
+          } else if (result.outcome === 'uncertain') {
+            setStatus.run('uncertain', null, job.id)
+            report.check.push({ company: job.company, role: job.role })
+          } else if (result.outcome === 'parked') {
+            setStatus.run('needs_you', null, job.id)
+            report.needsYou.push({ company: job.company, role: job.role, reason: result.reasons[0] ?? 'needs an answer' })
+          } else if (result.outcome === 'error') {
+            setStatus.run('failed', null, job.id)
+            report.failed++
+          } else if (result.outcome === 'closed') report.closed++
           logEvent(job.id, `live_${result.outcome}`, result.reasons.join('; '))
         } else {
           fs.writeFileSync(
@@ -387,12 +407,24 @@ function runBatch(mode: 'dry' | 'live', jobs: Job[]) {
           await pause(1500)
         }
       }
-      if (!progress.message && mode === 'live') progress.message = `Finished: ${applied} applied.`
     } catch (err) {
       progress.message = err instanceof Error ? err.message : String(err)
       logEvent(null, 'agent_error', progress.message)
     } finally {
       await context?.close().catch(() => undefined)
+      if (mode === 'live') {
+        // Why the run ended early, if it did ("Reached today's limit…", "Stopped when you asked.").
+        report.note = progress.message
+        report.finishedAt = now()
+        const line = summaryLine(report)
+        progress.message = report.note ? `${line}. ${report.note}` : `${line}.`
+        try {
+          saveReport(report)
+        } catch {
+          // The run itself is recorded in the database either way.
+        }
+        void notify(trigger === 'schedule' ? 'Auto Apply: daily run done' : 'Auto Apply: run done', progress.message)
+      }
       Object.assign(progress, { running: false, current: null, stopping: false })
       logEvent(null, mode === 'live' ? 'live_run' : 'dry_run', `${progress.done} of ${progress.total} jobs, ${applied} applied`)
     }
@@ -408,7 +440,7 @@ export function startDryRun(limit = 10, jobIds: string[] = []): AgentProgress {
 }
 
 /** Starts submitting real applications, up to what is left of today's limit. */
-export function startLive(limit?: number): AgentProgress {
+export function startLive(limit?: number, trigger: RunReport['trigger'] = 'manual'): AgentProgress {
   if (progress.running) return agentProgress()
   const left = dailyCap() - appliedToday()
   if (left <= 0) {
@@ -421,7 +453,7 @@ export function startLive(limit?: number): AgentProgress {
     progress.message = 'No jobs are ready for automatic applying.'
     return agentProgress()
   }
-  runBatch('live', jobs)
+  runBatch('live', jobs, trigger)
   return agentProgress()
 }
 

@@ -8,6 +8,8 @@ import { APP_DIR, db, getSetting, logEvent, now, setSetting } from './db.ts'
 import { addBoard, discoverProgress, discoverSettings, DISCOVER_DEFAULTS, parseBoardUrl, startDiscover, watchedBoards } from './discover.ts'
 import { classifyPending } from './areas.ts'
 import { runImport } from './import.ts'
+import { notify } from './notify.ts'
+import { saveScheduleSettings, scheduleSettings, startScheduler } from './schedule.ts'
 import {
   agentProgress,
   appliedToday,
@@ -228,6 +230,28 @@ app.put('/api/agent/settings', async (c) => {
   return c.json({ cap: dailyCap() })
 })
 
+app.get('/api/schedule', (c) => c.json(scheduleSettings()))
+
+app.put('/api/schedule', async (c) => {
+  const body = z
+    .object({
+      enabled: z.boolean(),
+      time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+      weekdaysOnly: z.boolean(),
+      findFirst: z.boolean(),
+      notify: z.boolean(),
+    })
+    .partial()
+    .safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'Invalid schedule' }, 400)
+  return c.json(saveScheduleSettings(body.data))
+})
+
+app.post('/api/notify/test', async (c) => {
+  const shown = await notify('Auto Apply', 'Notifications are working. You will get one after every run.')
+  return c.json({ shown })
+})
+
 app.get('/api/agent/runs/:id/receipt', (c) => {
   const file = runReceipt(Number(c.req.param('id')))
   if (!file) return c.json({ error: 'No receipt' }, 404)
@@ -362,6 +386,7 @@ if (db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM jobs').get()!.n ===
   console.log(`Imported ${result.jobs} jobs from the job sheet.`)
 }
 void syncResume()
+startScheduler()
 // Sort any job that has no work area yet, including everything already on the list.
 void classifyPending()
 void refreshLlm()

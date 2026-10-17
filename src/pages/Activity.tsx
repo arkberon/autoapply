@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { AgentProgress, AgentRun } from '../../shared/types.ts'
+import type { AgentProgress, AgentRun, ScheduleSettings } from '../../shared/types.ts'
 import { api, timeAgo } from '../api.ts'
 
 const OUTCOME: Record<AgentRun['outcome'], { label: string; tone: string }> = {
@@ -22,6 +22,91 @@ const SOURCE: Record<string, string> = {
 }
 
 const CAPS = [5, 10, 20, 30]
+
+function when(iso: string | null): string {
+  if (!iso) return ''
+  return new Date(iso).toLocaleString([], { weekday: 'long', hour: 'numeric', minute: '2-digit' })
+}
+
+function Schedule({ cap }: { cap: number }) {
+  const [s, setS] = useState<ScheduleSettings | null>(null)
+  const [note, setNote] = useState('')
+
+  useEffect(() => {
+    api.schedule().then(setS)
+    const timer = setInterval(() => api.schedule().then(setS), 15_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  if (!s) return null
+
+  const save = async (patch: Partial<ScheduleSettings>) => setS(await api.saveSchedule(patch))
+
+  const toggle = async (enabled: boolean) => {
+    if (
+      enabled &&
+      !window.confirm(
+        `Every ${s.weekdaysOnly ? 'weekday' : 'day'} at ${s.time} the app will apply for real to up to ${cap} jobs, ` +
+          'without asking first. Turn the daily schedule on?',
+      )
+    ) {
+      return
+    }
+    await save({ enabled })
+  }
+
+  const test = async () => {
+    const { shown } = await api.testNotify()
+    setNote(shown ? 'Sent. If nothing appeared, allow notifications for Script Editor in System Settings → Notifications.' : 'Notifications are off, or this is not a Mac.')
+  }
+
+  return (
+    <section className="card schedule">
+      <div className="schedule-head">
+        <div>
+          <strong>Daily schedule</strong>
+          <span className="muted small">
+            {s.running
+              ? `Running now: ${s.step ?? 'starting'}…`
+              : s.enabled
+                ? `On. Next run ${when(s.nextRun)}.${s.lastRun ? ` Last ran ${s.lastRun}.` : ''}`
+                : 'Off. Turn it on to have the app find, check and apply every day by itself.'}
+          </span>
+        </div>
+        <label className="switch">
+          <input type="checkbox" checked={s.enabled} onChange={(e) => toggle(e.target.checked)} />
+          {s.enabled ? 'On' : 'Off'}
+        </label>
+      </div>
+
+      <div className="schedule-options">
+        <label className="check">
+          Every
+          <select value={s.weekdaysOnly ? 'weekdays' : 'daily'} onChange={(e) => save({ weekdaysOnly: e.target.value === 'weekdays' })}>
+            <option value="weekdays">weekday</option>
+            <option value="daily">day</option>
+          </select>
+          at
+          <input type="time" value={s.time} onChange={(e) => e.target.value && save({ time: e.target.value })} />
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={s.findFirst} onChange={(e) => save({ findFirst: e.target.checked })} />
+          Find new jobs and re-check postings first
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={s.notify} onChange={(e) => save({ notify: e.target.checked })} />
+          Notify me when a run finishes
+        </label>
+        <button onClick={test}>Send a test notification</button>
+      </div>
+      {note && <p className="muted small">{note}</p>}
+      <p className="muted small">
+        The app has to be open and your Mac awake at that time. If you open it later in the day, the day's run starts then.
+        Each run saves a short report in <code>data/reports</code>.
+      </p>
+    </section>
+  )
+}
 
 function RunCard({ run, onRetry }: { run: AgentRun; onRetry: () => void }) {
   const outcome = OUTCOME[run.outcome]
@@ -199,6 +284,8 @@ export function Activity() {
           </button>
         )}
       </section>
+
+      <Schedule cap={today.cap} />
 
       <section className="card find">
         <div>
