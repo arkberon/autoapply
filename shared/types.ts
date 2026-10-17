@@ -71,6 +71,8 @@ export interface Job {
   area: WorkArea | null
   /** rule, model or you. */
   area_source: string | null
+  /** When the employer posted the job, when known. */
+  posted_at: string | null
   draft_count: number
 }
 

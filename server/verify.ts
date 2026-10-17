@@ -1,5 +1,6 @@
 import { db, logEvent, now } from './db.ts'
 import { isNoBotBoard } from './ats.ts'
+import { postedFromWorkday } from './posted.ts'
 import type { Job, Live, VerifyProgress } from '../shared/types.ts'
 
 // Checks whether each posting is still open. Hosted boards publish a small
@@ -8,6 +9,8 @@ import type { Job, Live, VerifyProgress } from '../shared/types.ts'
 interface Result {
   live: Live
   note: string
+  /** When the board says the job was posted, if it says. */
+  postedAt?: string | null
 }
 
 const UA = 'Mozilla/5.0 (compatible; autoapply-personal/0.1; job posting status check)'
@@ -39,20 +42,22 @@ async function checkGreenhouse(job: Job): Promise<Result> {
   const res = await get(`https://boards-api.greenhouse.io/v1/boards/${job.org}/jobs/${job.posting_id}`)
   if (res.status === 404) return { live: 'closed', note: 'Removed from the Greenhouse board' }
   if (!res.ok) return checkPage(job)
-  return { live: 'open', note: 'Listed on the Greenhouse board' }
+  const body = (await res.json().catch(() => null)) as { first_published?: string } | null
+  return { live: 'open', note: 'Listed on the Greenhouse board', postedAt: body?.first_published ?? null }
 }
 
 // One request returns every open posting for a company, so share it across that company's jobs.
-const ashbyBoards = new Map<string, Promise<Set<string> | null>>()
+const ashbyBoards = new Map<string, Promise<Map<string, string | null> | null>>()
 
-function ashbyBoard(org: string): Promise<Set<string> | null> {
+/** Posting id → publish date, for every listed posting on a company's Ashby board. */
+function ashbyBoard(org: string): Promise<Map<string, string | null> | null> {
   let board = ashbyBoards.get(org)
   if (!board) {
     board = get(`https://api.ashbyhq.com/posting-api/job-board/${org}`)
       .then(async (res) => {
         if (!res.ok) return null
-        const body = (await res.json()) as { jobs?: { id: string }[] }
-        return new Set((body.jobs ?? []).map((j) => j.id))
+        const body = (await res.json()) as { jobs?: { id: string; publishedAt?: string }[] }
+        return new Map((body.jobs ?? []).map((j) => [j.id, j.publishedAt ?? null]))
       })
       .catch(() => null)
     ashbyBoards.set(org, board)
@@ -62,7 +67,7 @@ function ashbyBoard(org: string): Promise<Set<string> | null> {
 
 async function checkAshby(job: Job): Promise<Result> {
   const board = await ashbyBoard(job.org!)
-  if (board?.has(job.posting_id!)) return { live: 'open', note: 'Listed on the Ashby board' }
+  if (board?.has(job.posting_id!)) return { live: 'open', note: 'Listed on the Ashby board', postedAt: board.get(job.posting_id!) }
 
   // Unlisted postings stay reachable by direct link, and some companies turn the
   // board feed off, so absence from the board is not proof of closure. The posting
@@ -78,7 +83,8 @@ async function checkLever(job: Job): Promise<Result> {
   const res = await get(`https://api.lever.co/v0/postings/${job.org}/${job.posting_id}`)
   if (res.status === 404) return { live: 'closed', note: 'Removed from the Lever board' }
   if (!res.ok) return checkPage(job)
-  return { live: 'open', note: 'Listed on the Lever board' }
+  const body = (await res.json().catch(() => null)) as { createdAt?: number } | null
+  return { live: 'open', note: 'Listed on the Lever board', postedAt: body?.createdAt ? new Date(body.createdAt).toISOString() : null }
 }
 
 async function checkWorkday(job: Job): Promise<Result> {
@@ -87,13 +93,19 @@ async function checkWorkday(job: Job): Promise<Result> {
   if (/^[a-z]{2}-[A-Z]{2}$/.test(parts[0] ?? '')) parts.shift()
   const res = await get(`${url.origin}/wday/cxs/${job.org}/${parts.join('/')}`)
   const body = (await res.json().catch(() => null)) as
-    | { jobPostingInfo?: { canApply?: boolean }; errorCode?: string }
+    | { jobPostingInfo?: { canApply?: boolean; startDate?: string; postedOn?: string }; errorCode?: string }
     | null
 
   if (res.ok && body?.jobPostingInfo) {
     return body.jobPostingInfo.canApply === false
       ? { live: 'closed', note: 'Workday is not accepting applications' }
-      : { live: 'open', note: 'Listed on the Workday site' }
+      : {
+          live: 'open',
+          note: 'Listed on the Workday site',
+          postedAt: body.jobPostingInfo.startDate
+            ? new Date(`${body.jobPostingInfo.startDate.slice(0, 10)}T12:00:00Z`).toISOString()
+            : postedFromWorkday(body.jobPostingInfo.postedOn ?? ''),
+        }
   }
   // S21 is Workday's "no such posting". Many employers answer 403 to this feed
   // for every posting, so anything else says nothing about the job itself.
@@ -135,7 +147,7 @@ export function startVerify(): VerifyProgress {
   if (progress.running) return verifyProgress()
 
   const jobs = db.prepare<[], Job>("SELECT * FROM jobs WHERE status != 'applied' AND removed = 0").all()
-  const save = db.prepare('UPDATE jobs SET live = ?, live_note = ?, live_checked_at = ? WHERE id = ?')
+  const save = db.prepare('UPDATE jobs SET live = ?, live_note = ?, live_checked_at = ?, posted_at = COALESCE(?, posted_at) WHERE id = ?')
   Object.assign(progress, { running: true, done: 0, total: jobs.length, startedAt: now(), finishedAt: null })
   ashbyBoards.clear()
 
@@ -143,7 +155,8 @@ export function startVerify(): VerifyProgress {
   const worker = async () => {
     for (let job = queue.shift(); job; job = queue.shift()) {
       const result = await checkJob(job)
-      save.run(result.live, result.note, now(), job.id)
+      const posted = result.postedAt && !Number.isNaN(new Date(result.postedAt).getTime()) ? new Date(result.postedAt).toISOString() : null
+      save.run(result.live, result.note, now(), posted, job.id)
       progress.done++
     }
   }

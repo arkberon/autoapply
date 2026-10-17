@@ -1590,3 +1590,12 @@ button.ghost:hover {
   gap: 2px;
   margin-top: 4px;
 }
+
+.posted {
+  margin-left: 8px;
+  font-size: 12px;
+}
+
+.posted.stale {
+  color: var(--warn);
+}

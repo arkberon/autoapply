@@ -82,6 +82,23 @@ export const api = {
   testLlm: () => request<LlmStatus>('/llm/test', 'POST'),
 }
 
+/** Age of a posting for people: "today", "5 days ago", "3 weeks ago", "2 months ago". */
+export function postedAgo(iso: string | null): string {
+  if (!iso) return 'date unknown'
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
+  if (days <= 0) return 'today'
+  if (days === 1) return 'yesterday'
+  if (days < 14) return `${days} days ago`
+  if (days < 60) return `${Math.round(days / 7)} weeks ago`
+  if (days < 365) return `${Math.round(days / 30)} months ago`
+  return 'over a year ago'
+}
+
+/** Postings this old are considered stale (about two months). */
+export const STALE_DAYS = 60
+
+export const isStale = (iso: string | null) => Boolean(iso) && Date.now() - new Date(iso!).getTime() > STALE_DAYS * 86_400_000
+
 export function timeAgo(iso: string | null): string {
   if (!iso) return 'never'
   const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60_000)

@@ -77,6 +77,7 @@ Fill in the fields marked **Needed**; everything else is optional. Answers save 
 ### 📋 Jobs
 Your whole list, in the order the app will work through it.
 
+- Every job shows **when it was posted** ("Posted 5 days ago"), taken from the job board, the public list or your sheet's notes. Postings older than two months are marked, since they may be filled already.
 - **Filter** by priority, by **city**, by **work area**, by how a job gets applied, or search for a company. A posting that lists several cities ("SF; LA; NYC") shows under each of them.
 - **Work areas.** Every job is sorted automatically into an area: Software engineering, IT, QA & testing, Technical support, Customer support, Data & analytics, Field engineering, Construction, Clerical & admin, Implementation & onboarding, Sales & business, Design or Other. Jobs found later are sorted the moment they arrive. The job title decides most of them; your local model sorts the rest from the same list. Open a job to change its area; the app keeps your choice.
 - **Change a priority** with the dropdown on the left of any row. Your choice sticks.
@@ -86,7 +87,7 @@ Your whole list, in the order the app will work through it.
 - **Remove from my list** moves a job you don't want to Removed. Re-importing the sheet won't bring it back; open it there and press **Put back on my list** to restore it.
 
 ### 🧹 Clean up
-On the **To apply** view, press **Clean up…** and type words that don't fit what you're looking for, such as `sales, nurse, mechanical`. The app shows every job those words would remove *before* anything happens, then removes them in one click. It matches whole words in job titles (and company names, if you tick the box), and can also sweep out postings that have closed. Applied jobs are never touched, and everything removed can be restored. Your words are remembered for next time.
+On the **To apply** view, press **Clean up…** and type words that don't fit what you're looking for, such as `sales, nurse, mechanical`. The app shows every job those words would remove *before* anything happens, then removes them in one click. It matches whole words in job titles (and company names, if you tick the box), and can also sweep out postings that have closed or that were **posted more than two months ago**. A job whose posting date is unknown is never removed for its age. Applied jobs are never touched, and everything removed can be restored. Your words are remembered for next time.
 
 ### 🆕 Finding new jobs
 At the top of the Jobs tab, press **Find new jobs**. The app searches two kinds of sources and adds the openings that match your filters:

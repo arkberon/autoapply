@@ -12,7 +12,7 @@ import {
   WORK_AREAS,
 } from '../../shared/types.ts'
 import { CITY_OPTIONS, regionsOf } from '../../shared/regions.ts'
-import { api, timeAgo, type JobDetail } from '../api.ts'
+import { api, isStale, postedAgo, timeAgo, type JobDetail } from '../api.ts'
 import { Cleanup } from './Cleanup.tsx'
 
 const PRIORITIES: Priority[] = [1, 2, 3, 4]
@@ -78,6 +78,13 @@ function Detail({ job, onChange }: { job: Job; onChange: (job: Job) => void }) {
         <dt>How it applies</dt>
         <dd>
           {MODE_LABEL[job.mode]} via {job.ats}. {MODE_HELP[job.mode]}
+        </dd>
+        <dt>Posted</dt>
+        <dd>
+          {job.posted_at
+            ? `${new Date(job.posted_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} (${postedAgo(job.posted_at)})`
+            : 'Unknown. The employer did not publish a date, or it has not been checked yet.'}
+          {isStale(job.posted_at) && <span className="muted"> Older than two months; it may be filled already.</span>}
         </dd>
         <dt>Posting</dt>
         <dd>
@@ -362,6 +369,9 @@ export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boole
                     <span className="muted small">
                       {job.market}
                       {job.area && <span className="area-tag">{job.area}</span>}
+                      <span className={isStale(job.posted_at) ? 'posted stale' : 'posted'}>
+                        {job.posted_at ? `Posted ${postedAgo(job.posted_at)}` : 'Posting date unknown'}
+                      </span>
                     </span>
                   </td>
                   <td>

@@ -82,6 +82,7 @@ if (!jobColumns.has('removed')) db.exec('ALTER TABLE jobs ADD COLUMN removed INT
 if (!jobColumns.has('discovered_at')) db.exec('ALTER TABLE jobs ADD COLUMN discovered_at TEXT')
 if (!jobColumns.has('area')) db.exec('ALTER TABLE jobs ADD COLUMN area TEXT')
 if (!jobColumns.has('area_source')) db.exec('ALTER TABLE jobs ADD COLUMN area_source TEXT')
+if (!jobColumns.has('posted_at')) db.exec('ALTER TABLE jobs ADD COLUMN posted_at TEXT')
 if (!jobColumns.has('area_locked')) db.exec('ALTER TABLE jobs ADD COLUMN area_locked INTEGER NOT NULL DEFAULT 0')
 
 export const now = () => new Date().toISOString()

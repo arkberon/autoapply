@@ -8,6 +8,7 @@ import { APP_DIR, db, getSetting, logEvent, now, setSetting } from './db.ts'
 import { addBoard, discoverProgress, discoverSettings, DISCOVER_DEFAULTS, parseBoardUrl, startDiscover, watchedBoards } from './discover.ts'
 import { classifyPending } from './areas.ts'
 import { runImport } from './import.ts'
+import { backfillPostedAt } from './posted.ts'
 import { notify } from './notify.ts'
 import { saveScheduleSettings, scheduleSettings, startScheduler } from './schedule.ts'
 import {
@@ -36,7 +37,7 @@ const app = new Hono()
 
 const JOB_COLUMNS = `id, company, role, market, location, url, ats, mode, org, posting_id, fit, difficulty,
   priority, priority_reason, priority_locked, salary_low, salary_high, status, live, live_note, live_checked_at,
-  last_checked, applied_at, dup_of, hold, notes, removed, discovered_at, area, area_source,
+  last_checked, applied_at, dup_of, hold, notes, removed, discovered_at, area, area_source, posted_at,
   (SELECT COUNT(*) FROM drafts d WHERE d.job_id = jobs.id) AS draft_count`
 
 // Jobs with nothing left to do sink to the bottom. Within a priority level, the
@@ -324,6 +325,7 @@ app.put('/api/answers/:key', async (c) => {
 
 app.post('/api/import', (c) => {
   const result = runImport()
+  backfillPostedAt()
   void classifyPending()
   return c.json(result)
 })
@@ -418,6 +420,8 @@ if (db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM jobs').get()!.n ===
   console.log(`Imported ${result.jobs} jobs from the job sheet.`)
 }
 void syncResume()
+// Posting dates for jobs that have none yet, from what is already known about them.
+backfillPostedAt()
 startScheduler()
 // Sort any job that has no work area yet, including everything already on the list.
 void classifyPending()

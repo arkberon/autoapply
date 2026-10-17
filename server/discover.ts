@@ -343,9 +343,9 @@ export function startDiscover(): DiscoverProgress {
   const knownUrl = db.prepare<[string], { id: string }>('SELECT id FROM jobs WHERE url = ?')
   const insert = db.prepare(`
     INSERT INTO jobs (id, company, role, market, location, url, ats, mode, org, posting_id, fit, difficulty,
-      priority, priority_reason, status, live, live_note, live_checked_at, last_checked, discovered_at, raw)
+      priority, priority_reason, status, live, live_note, live_checked_at, last_checked, discovered_at, posted_at, raw)
     VALUES (@id, @company, @role, @market, @location, @url, @ats, @mode, @org, @posting_id, @fit, '',
-      @priority, @priority_reason, 'not_started', 'open', @live_note, @at, @today, @at, @raw)
+      @priority, @priority_reason, 'not_started', 'open', @live_note, @at, @today, @at, @posted_at, @raw)
     ON CONFLICT(id) DO NOTHING
   `)
 
@@ -451,6 +451,7 @@ export function startDiscover(): DiscoverProgress {
           ? "Found on the company's board · title says entry-level"
           : "Found on the company's board · title does not say entry-level; check the requirements",
         live_note: `Listed on the ${p.ats} board`,
+        posted_at: p.publishedAt ? new Date(p.publishedAt).toISOString() : null,
         at,
         today: at.slice(0, 10),
         raw: JSON.stringify(p),
@@ -495,6 +496,7 @@ export function startDiscover(): DiscoverProgress {
         priority: 2 satisfies Priority,
         priority_reason: 'On a public new-grad list · entry-level by definition',
         live_note: `Listed as open on ${list.name}`,
+        posted_at: p.publishedAt,
         at,
         today: at.slice(0, 10),
         raw: JSON.stringify({ source: 'list', list: list.name, category: p.category, publishedAt: p.publishedAt }),
