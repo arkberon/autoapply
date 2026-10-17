@@ -89,7 +89,12 @@ Your whole list, in the order the app will work through it.
 On the **To apply** view, press **Clean up…** and type words that don't fit what you're looking for, such as `sales, nurse, mechanical`. The app shows every job those words would remove *before* anything happens, then removes them in one click. It matches whole words in job titles (and company names, if you tick the box), and can also sweep out postings that have closed. Applied jobs are never touched, and everything removed can be restored. Your words are remembered for next time.
 
 ### 🆕 Finding new jobs
-At the top of the Jobs tab, press **Find new jobs**. The app reads the public job boards (Greenhouse, Ashby and Lever) of every company already on your list and adds openings that match your filters. They show up with a green **New** tag, and the **Found by the app** chip lists only those.
+At the top of the Jobs tab, press **Find new jobs**. The app searches two kinds of sources and adds the openings that match your filters:
+
+- **Company job boards:** the public Greenhouse, Ashby and Lever boards of every company already on your list.
+- **Public new-grad lists:** the [SimplifyJobs New-Grad-Positions](https://github.com/SimplifyJobs/New-Grad-Positions) list, updated daily, which covers entry-level openings at thousands of companies. You can switch it off in Settings.
+
+After each search the card shows what each source checked and why postings were left out: already on your list, outside your cities, other kinds of roles, or too old. A "0 new" result explains itself. They show up with a green **New** tag, and the **Found by the app** chip lists only those.
 
 - Titles that say *new grad*, *junior*, *entry-level* or *Engineer I* land at **Good chance**; the rest land at **Stretch**, so you can check the requirements.
 - Out of the box it looks for **entry-level software and IT roles** (developer, QA, IT support, help desk, desktop support, systems administrator and similar) and skips anything senior, lead, mid-level or an internship.

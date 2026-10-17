@@ -206,11 +206,27 @@ export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boole
           <strong>Find new jobs</strong>
           <span className="muted small">
             {discover.running
-              ? `Searching ${discover.done} of ${discover.total} company job boards… ${discover.added} new so far.`
+              ? `Searching ${discover.done} of ${discover.total} sources… ${discover.added} new so far.`
               : discover.finishedAt
-                ? `Last search ${timeAgo(discover.finishedAt)} added ${discover.lastAdded} new job${discover.lastAdded === 1 ? '' : 's'}. Watching ${discover.boards} company boards.`
-                : `Searches the job boards of the ${discover.boards} companies on your list and adds matching openings. Filters are in Settings.`}
+                ? `Last search ${timeAgo(discover.finishedAt)} added ${discover.lastAdded} new job${discover.lastAdded === 1 ? '' : 's'}.`
+                : `Searches ${discover.boards} company job boards and a public list of new-grad openings, then adds the ones that match your filters in Settings.`}
           </span>
+          {!discover.running && discover.report && (
+            <span className="muted small search-report">
+              {[discover.report.lists, discover.report.boards]
+                .filter((r) => r.sources > 0)
+                .map((r, i) => {
+                  const name = r === discover.report!.lists ? 'Public new-grad list' : `${r.sources} company boards`
+                  return (
+                    <span key={i}>
+                      <strong>{name}:</strong> {r.checked.toLocaleString()} postings checked · <strong>{r.added} new</strong> ·{' '}
+                      {r.known} already on your list · {r.otherPlaces} outside your cities · {r.otherTitles} other kinds of roles ·{' '}
+                      {r.tooOld} too old
+                    </span>
+                  )
+                })}
+            </span>
+          )}
         </div>
         <button className="primary" onClick={findJobs} disabled={discover.running}>
           {discover.running ? 'Searching…' : 'Find new jobs'}

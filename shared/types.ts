@@ -130,6 +130,24 @@ export interface DiscoverProgress {
   failed: number
   finishedAt: string | null
   lastAdded: number
+  /** What the last search looked at, by source. */
+  report: DiscoverReport | null
+}
+
+export interface DiscoverSourceReport {
+  sources: number
+  checked: number
+  added: number
+  /** Already on the list (or removed earlier). */
+  known: number
+  otherTitles: number
+  otherPlaces: number
+  tooOld: number
+}
+
+export interface DiscoverReport {
+  boards: DiscoverSourceReport
+  lists: DiscoverSourceReport
 }
 
 export interface DiscoverSettings {
@@ -140,6 +158,8 @@ export interface DiscoverSettings {
   /** Comma-separated places; the posting's location must mention one. */
   locations: string
   maxAgeDays: number
+  /** Also search public entry-level job lists. */
+  useLists: boolean
 }
 
 export interface PageLink {

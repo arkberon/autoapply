@@ -1,6 +1,7 @@
 import { classifyPending } from './areas.ts'
+import { detectTarget } from './ats.ts'
 import { db, getSetting, logEvent, now, setSetting } from './db.ts'
-import type { DiscoverProgress, DiscoverSettings, Priority } from '../shared/types.ts'
+import type { DiscoverProgress, DiscoverReport, DiscoverSettings, Mode, Priority } from '../shared/types.ts'
 
 // Finds new openings on the job boards of companies already on the list (plus
 // any boards added in Settings) and adds the matching ones straight to the
@@ -91,6 +92,7 @@ export const DISCOVER_DEFAULTS: DiscoverSettings = {
   ].join(', '),
   locations: [...REGIONS.flatMap((r) => r.cities), 'remote'].join(', '),
   maxAgeDays: 45,
+  useLists: true,
 }
 
 // "Remote" alone is accepted, but not when the posting names a country outside the US.
@@ -105,6 +107,7 @@ export function discoverSettings(): DiscoverSettings {
     exclude: getSetting('discover_exclude', DISCOVER_DEFAULTS.exclude),
     locations: getSetting('discover_locations', DISCOVER_DEFAULTS.locations),
     maxAgeDays: Number(getSetting('discover_max_age_days', String(DISCOVER_DEFAULTS.maxAgeDays))) || DISCOVER_DEFAULTS.maxAgeDays,
+    useLists: getSetting('discover_use_lists', '1') === '1',
   }
 }
 
@@ -230,6 +233,93 @@ async function fetchBoard(board: Board): Promise<Posting[] | null> {
   )
 }
 
+// ── Public entry-level job lists
+// SimplifyJobs keeps a public, daily-updated list of new-grad and entry-level
+// openings across thousands of companies. Every posting on it is entry-level,
+// which is what this search is for; the company boards above only cover
+// companies already on the user's list.
+
+export const PUBLIC_LISTS = [
+  {
+    name: 'SimplifyJobs New-Grad-Positions',
+    url: 'https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/.github/scripts/listings.json',
+  },
+]
+
+interface ListPosting {
+  id: string
+  company: string
+  title: string
+  location: string
+  url: string
+  publishedAt: string | null
+  category: string
+  ats: string
+  mode: Mode
+  org: string | null
+  postingId: string | null
+}
+
+/** One address per posting, without tracking parameters, so the same job is recognized from either source. */
+function canonicalUrl(raw: string): string {
+  const t = detectTarget(raw)
+  if (t.ats === 'Ashby' && t.org && t.postingId) return `https://jobs.ashbyhq.com/${t.org}/${t.postingId}`
+  if (t.ats === 'Lever' && t.org && t.postingId) return `https://jobs.lever.co/${t.org}/${t.postingId}`
+  if (t.ats === 'Greenhouse' && t.org && t.postingId) return `https://job-boards.greenhouse.io/${t.org}/jobs/${t.postingId}`
+  try {
+    const u = new URL(raw)
+    for (const key of [...u.searchParams.keys()]) {
+      if (/^utm_|^ref$|^source$|^src$|^embed$|^mobile$|^needsRedirect$/i.test(key)) u.searchParams.delete(key)
+    }
+    return u.toString()
+  } catch {
+    return raw
+  }
+}
+
+async function fetchList(url: string): Promise<ListPosting[] | null> {
+  try {
+    const res = await fetch(url, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(90_000) })
+    if (!res.ok) {
+      logEvent(null, 'discover_error', `Public list answered ${res.status}`)
+      return null
+    }
+    const rows = (await res.json()) as {
+      id: string
+      company_name: string
+      title: string
+      locations?: string[]
+      url: string
+      date_posted?: number
+      category?: string
+      active?: boolean
+      is_visible?: boolean
+    }[]
+    return rows
+      .filter((r) => r.active && r.is_visible !== false && r.url)
+      .map((r) => {
+        const url = canonicalUrl(r.url)
+        const t = detectTarget(url)
+        return {
+          id: r.id,
+          company: r.company_name,
+          title: r.title,
+          location: (r.locations ?? []).join('; '),
+          url,
+          publishedAt: r.date_posted ? new Date(r.date_posted * 1000).toISOString() : null,
+          category: r.category ?? '',
+          ats: t.ats,
+          mode: t.mode,
+          org: t.org,
+          postingId: t.postingId,
+        }
+      })
+  } catch (err) {
+    logEvent(null, 'discover_error', `Public list: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`)
+    return null
+  }
+}
+
 /** Picks the lane label the rest of the list uses, from the posting's location text. */
 function marketFor(location: string): string {
   // First region named in the location wins, in REGIONS order.
@@ -253,6 +343,13 @@ const progress: DiscoverProgress = {
   failed: 0,
   finishedAt: getSetting('discover_last_run') || null,
   lastAdded: Number(getSetting('discover_last_added', '0')),
+  report: (() => {
+    try {
+      return JSON.parse(getSetting('discover_last_report', 'null')) as DiscoverReport | null
+    } catch {
+      return null
+    }
+  })(),
 }
 
 export const discoverProgress = (): DiscoverProgress => ({ ...progress })
@@ -267,7 +364,11 @@ export function startDiscover(): DiscoverProgress {
   const oldest = Date.now() - settings.maxAgeDays * 86_400_000
 
   const boards = watchedBoards()
-  Object.assign(progress, { running: true, done: 0, total: boards.length, added: 0, failed: 0 })
+  const lists = settings.useLists ? PUBLIC_LISTS : []
+  Object.assign(progress, { running: true, done: 0, total: boards.length + lists.length, added: 0, failed: 0 })
+  // What each source looked at and why postings were not added, so "0 new" explains itself.
+  const blank = () => ({ checked: 0, added: 0, known: 0, otherTitles: 0, otherPlaces: 0, tooOld: 0 })
+  const report: DiscoverReport = { boards: { sources: boards.length, ...blank() }, lists: { sources: lists.length, ...blank() } }
 
   const known = db.prepare<[string, string, string], { id: string }>(
     'SELECT id FROM jobs WHERE ats = ? AND org = ? AND posting_id = ?',
@@ -276,7 +377,7 @@ export function startDiscover(): DiscoverProgress {
   const insert = db.prepare(`
     INSERT INTO jobs (id, company, role, market, location, url, ats, mode, org, posting_id, fit, difficulty,
       priority, priority_reason, status, live, live_note, live_checked_at, last_checked, discovered_at, raw)
-    VALUES (@id, @company, @role, @market, @location, @url, @ats, 'auto', @org, @posting_id, @fit, '',
+    VALUES (@id, @company, @role, @market, @location, @url, @ats, @mode, @org, @posting_id, @fit, '',
       @priority, @priority_reason, 'not_started', 'open', @live_note, @at, @today, @at, @raw)
     ON CONFLICT(id) DO NOTHING
   `)
@@ -294,15 +395,37 @@ export function startDiscover(): DiscoverProgress {
   const matches = (p: Posting): boolean =>
     fitsFilters(p) && !(p.publishedAt && new Date(p.publishedAt).getTime() < oldest)
 
+  // Postings on a public new-grad list are entry-level already: a "Software" one passes on
+  // its category even when the title has no keyword from the list (e.g. "SDK Platform Engineer").
+  const fitsList = (p: { title: string; location: string; category: string }): boolean =>
+    fitsFilters({ title: p.category === 'Software' && !include?.test(p.title) ? `software engineer ${p.title}` : p.title, location: p.location })
+
+  /** Why a posting was left out, for the report; null when it matches. */
+  const reason = (title: string, location: string, publishedAt: string | null, category?: string): keyof typeof report.boards | null => {
+    if (publishedAt && new Date(publishedAt).getTime() < oldest) return 'tooOld'
+    const titleOk = (include?.test(title) || category === 'Software') && !exclude?.test(title)
+    if (!titleOk) return 'otherTitles'
+    return (category !== undefined ? fitsList({ title, location, category }) : fitsFilters({ title, location })) ? null : 'otherPlaces'
+  }
+
   // Re-apply the current filters to earlier finds, so tightening a filter cleans the
   // list. Jobs the user has touched (priority set, applied, removed) are kept.
   const untouched = db
-    .prepare<[], { id: string; role: string; location: string }>(
-      "SELECT id, role, location FROM jobs WHERE discovered_at IS NOT NULL AND status = 'not_started' AND priority_locked = 0 AND removed = 0",
+    .prepare<[], { id: string; role: string; location: string; raw: string }>(
+      "SELECT id, role, location, raw FROM jobs WHERE discovered_at IS NOT NULL AND status = 'not_started' AND priority_locked = 0 AND removed = 0 AND id LIKE 'disc_%'",
     )
     .all()
   const drop = db.prepare('DELETE FROM jobs WHERE id = ?')
-  const dropped = untouched.filter((j) => !fitsFilters({ title: j.role, location: j.location }))
+  const dropped = untouched.filter((j) => {
+    let category: string | undefined
+    try {
+      const raw = JSON.parse(j.raw) as { source?: string; category?: string }
+      if (raw.source === 'list') category = raw.category ?? ''
+    } catch {
+      // Older rows: judged as board finds.
+    }
+    return category !== undefined ? !fitsList({ title: j.role, location: j.location, category }) : !fitsFilters({ title: j.role, location: j.location })
+  })
   db.transaction(() => dropped.forEach((j) => drop.run(j.id)))()
 
   // Market labels come from REGIONS, which can grow; keep earlier finds labelled the same way.
@@ -331,7 +454,16 @@ export function startDiscover(): DiscoverProgress {
       return
     }
     for (const p of postings) {
-      if (!matches(p) || known.get(p.ats, p.org, p.postingId) || knownUrl.get(p.url)) continue
+      report.boards.checked++
+      const why = reason(p.title, p.location, p.publishedAt)
+      if (why) {
+        report.boards[why]++
+        continue
+      }
+      if (known.get(p.ats, p.org, p.postingId) || knownUrl.get(p.url)) {
+        report.boards.known++
+        continue
+      }
       const entry = ENTRY_LEVEL.test(p.title)
       const at = now()
       // The same posting can appear on two boards of one company; the first one wins.
@@ -343,6 +475,7 @@ export function startDiscover(): DiscoverProgress {
         location: p.location,
         url: p.url,
         ats: p.ats,
+        mode: 'auto',
         org: p.org,
         posting_id: p.postingId,
         fit: entry ? 'Found automatically: entry-level title' : 'Found automatically: check the requirements',
@@ -356,20 +489,78 @@ export function startDiscover(): DiscoverProgress {
         raw: JSON.stringify(p),
       })
       progress.added += changes
+      report.boards.added += changes
     }
   }
 
-  Promise.all(Array.from({ length: 6 }, worker)).finally(() => {
+  const searchList = async (list: (typeof PUBLIC_LISTS)[number]) => {
+    const postings = await fetchList(list.url)
+    if (!postings) {
+      progress.failed++
+      return
+    }
+    for (const p of postings) {
+      report.lists.checked++
+      const why = reason(p.title, p.location, p.publishedAt, p.category)
+      if (why) {
+        report.lists[why]++
+        continue
+      }
+      if ((p.org && p.postingId && known.get(p.ats, p.org, p.postingId)) || knownUrl.get(p.url)) {
+        report.lists.known++
+        continue
+      }
+      const at = now()
+      // Hosted-board postings share the board search's id, so the two sources never double up.
+      const id = p.org && p.postingId && ['Greenhouse', 'Ashby', 'Lever'].includes(p.ats) ? `disc_${p.ats.toLowerCase()}_${p.postingId}` : `disc_list_${p.id}`
+      const { changes } = insert.run({
+        id,
+        company: p.company,
+        role: p.title,
+        market: marketFor(p.location),
+        location: p.location,
+        url: p.url,
+        ats: p.ats,
+        mode: p.mode,
+        org: p.org,
+        posting_id: p.postingId,
+        fit: 'Found on a public new-grad job list',
+        priority: 2 satisfies Priority,
+        priority_reason: 'On a public new-grad list · entry-level by definition',
+        live_note: `Listed as open on ${list.name}`,
+        at,
+        today: at.slice(0, 10),
+        raw: JSON.stringify({ source: 'list', list: list.name, category: p.category, publishedAt: p.publishedAt }),
+      })
+      progress.added += changes
+      report.lists.added += changes
+    }
+  }
+
+  const listWork = (async () => {
+    for (const list of lists) {
+      try {
+        await searchList(list)
+      } catch (err) {
+        progress.failed++
+        logEvent(null, 'discover_error', `${list.name}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      progress.done++
+    }
+  })()
+
+  Promise.all([...Array.from({ length: 6 }, worker), listWork]).finally(() => {
     // New finds get their work area straight away.
     void classifyPending()
     const at = now()
-    Object.assign(progress, { running: false, finishedAt: at, lastAdded: progress.added })
+    Object.assign(progress, { running: false, finishedAt: at, lastAdded: progress.added, report })
+    setSetting('discover_last_report', JSON.stringify(report))
     setSetting('discover_last_run', at)
     setSetting('discover_last_added', String(progress.added))
     logEvent(
       null,
       'discover',
-      `${progress.total} boards, ${progress.added} new jobs, ${dropped.length} earlier finds no longer match, ${progress.failed} boards failed`,
+      `${boards.length} boards and ${lists.length} public lists, ${progress.added} new jobs (${report.lists.added} from lists), ${dropped.length} earlier finds no longer match, ${progress.failed} sources failed`,
     )
   })
   return discoverProgress()

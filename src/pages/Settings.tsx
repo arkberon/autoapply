@@ -190,6 +190,10 @@ export function Settings({ refresh }: { refresh: () => void }) {
               />
             </div>
           </div>
+          <label className="check" style={{ marginTop: 14 }}>
+            <input type="checkbox" checked={search.useLists} onChange={(e) => setSearch({ ...search, useLists: e.target.checked })} />
+            Also search public new-grad job lists (SimplifyJobs, updated daily; thousands of companies)
+          </label>
           <div className="row" style={{ marginTop: 14 }}>
             <button className="primary" onClick={() => saveSearch({ ...search, maxAgeDays: Math.max(1, search.maxAgeDays) })}>
               Save filters
