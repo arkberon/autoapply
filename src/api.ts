@@ -1,5 +1,6 @@
 import type {
   AgentProgress,
+  Dashboard,
   AgentRun,
   Answer,
   DiscoverProgress,
@@ -40,6 +41,7 @@ export interface Settings {
 
 export const api = {
   summary: () => request<Summary>('/summary'),
+  dashboard: () => request<Dashboard>('/dashboard'),
   jobs: () => request<Job[]>('/jobs'),
   job: (id: string) => request<JobDetail>(`/jobs/${id}`),
   patchJob: (

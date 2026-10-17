@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AgentProgress, AgentRun, ScheduleSettings } from '../../shared/types.ts'
 import { api, timeAgo } from '../api.ts'
+import { LiveRun } from './LiveRun.tsx'
 
 const OUTCOME: Record<AgentRun['outcome'], { label: string; tone: string }> = {
   running: { label: 'Working…', tone: '' },
@@ -252,6 +253,8 @@ export function Activity() {
         What the application agent did, job by job: every answer it gave, where each answer came from, a screenshot, and
         a receipt for every application it sent.
       </p>
+
+      <LiveRun progress={progress} runs={runs} onStop={async () => setProgress(await api.stopAgent())} />
 
       <section className="card find">
         <div>

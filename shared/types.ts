@@ -222,6 +222,24 @@ export interface ScheduleSettings {
   step: string | null
 }
 
+export interface NeedsYouItem {
+  jobId: string
+  company: string
+  role: string
+  url: string
+  status: Status
+  reason: string
+}
+
+export interface Dashboard {
+  today: { applied: number; cap: number; ready: number }
+  agent: AgentProgress
+  schedule: ScheduleSettings
+  needsYou: NeedsYouItem[]
+  recent: Pick<AgentRun, 'id' | 'company' | 'role' | 'outcome' | 'mode' | 'startedAt'>[]
+  next: Pick<Job, 'id' | 'company' | 'role' | 'priority'>[]
+}
+
 export interface Summary {
   jobs: number
   byPriority: Record<string, number>

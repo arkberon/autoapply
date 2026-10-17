@@ -15,6 +15,7 @@ import {
   appliedToday,
   dailyCap,
   listRuns,
+  pickLiveJobs,
   readyForLive,
   runReceipt,
   runScreenshot,
@@ -27,7 +28,7 @@ import { DEFAULT_LLM_BASE_URL, llmConfig, testLlm } from './llm.ts'
 import { QUESTIONS, SECTION_NOTES } from './questions.ts'
 import { docIdFromUrl, resumeInfo, syncResume } from './resume.ts'
 import { startVerify, verifyProgress } from './verify.ts'
-import { WORK_AREAS, type Answer, type Job, type LlmStatus, type Summary } from '../shared/types.ts'
+import { WORK_AREAS, type Answer, type Dashboard, type Job, type LlmStatus, type NeedsYouItem, type Summary } from '../shared/types.ts'
 
 process.chdir(APP_DIR)
 
@@ -231,6 +232,35 @@ app.put('/api/agent/settings', async (c) => {
 })
 
 app.get('/api/schedule', (c) => c.json(scheduleSettings()))
+
+// Everything the Dashboard shows that is not in the summary.
+app.get('/api/dashboard', (c) => {
+  const needsYou = db
+    .prepare<[], NeedsYouItem & { reasons: string | null }>(`
+      SELECT jobs.id AS jobId, jobs.company, jobs.role, jobs.url, jobs.status,
+        (SELECT reasons FROM runs WHERE runs.job_id = jobs.id AND runs.mode = 'live' ORDER BY runs.id DESC LIMIT 1) AS reasons
+      FROM jobs
+      WHERE jobs.status IN ('needs_you', 'uncertain', 'failed') AND jobs.removed = 0
+      ORDER BY jobs.priority, jobs.company
+      LIMIT 20
+    `)
+    .all()
+    .map(({ reasons, ...item }) => ({
+      ...item,
+      reason:
+        (JSON.parse(reasons ?? '[]') as string[])[0] ??
+        (item.status === 'uncertain' ? 'Submit was pressed but no confirmation appeared' : 'Needs an answer'),
+    }))
+  const dashboard: Dashboard = {
+    today: { applied: appliedToday(), cap: dailyCap(), ready: readyForLive() },
+    agent: agentProgress(),
+    schedule: scheduleSettings(),
+    needsYou,
+    recent: listRuns(6).map(({ id, company, role, outcome, mode, startedAt }) => ({ id, company, role, outcome, mode, startedAt })),
+    next: pickLiveJobs(4).map(({ id, company, role, priority }) => ({ id, company, role, priority })),
+  }
+  return c.json(dashboard)
+})
 
 app.put('/api/schedule', async (c) => {
   const body = z

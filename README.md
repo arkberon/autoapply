@@ -55,15 +55,17 @@ Machines with less than 32 GB of memory should pick a smaller model, such as an 
 
 ## A tour of the app
 
-### 🏠 Home: your checklist
-Four steps, each with one button:
+The app is dark by design, built around one question: *what is the agent doing, and what does it need from me?*
 
-1. **Answer the setup questions**
-2. **Resume:** synced from your Google Doc
-3. **Local model:** connected and answering
-4. **Check which jobs are still open**
+### 📊 Dashboard
+- **Agent status.** A band at the top says what's happening right now: idle, on autopilot (with the next run time), a daily run in progress, or applying now with live progress. A ring shows today's applications against your daily limit. Start applying, run a dry run, turn the schedule on or off, or share your progress from here.
+- **Totals and pipeline.** Applied, to apply, ready for the agent and found by the agent, plus a pipeline from found to applied.
+- **By work area and priority mix,** so you can see where your search is pointed.
+- **Needs you.** Jobs the agent couldn't finish, each with the reason and a one-click *Open form* or *Try again*.
+- **Recent agent runs** and a **setup health** strip (resume, local model, setup answers, posting checks), each with a fix-it button when something needs attention.
 
-Below the checklist you'll see your jobs by priority, and how each one will get applied.
+### 📣 Share
+Press **Share** on the Dashboard for a 1080 × 1350 image of your progress, sized for Instagram, LinkedIn and X. Pick an accent, adjust the count and download it as a PNG.
 
 ### ✍️ Setup questions
 Fill in the fields marked **Needed**; everything else is optional. Answers save as you type, so there's no Save button to forget.
@@ -117,6 +119,8 @@ How it decides each answer, in order:
 3. **Your local model**, which picks from the form's own choices or writes a short answer (150 words maximum) using only facts from your resume.
 
 When it can't answer safely, it **parks** the job in *Needs you* and says why: no saved answer, a file it doesn't have, a question about criminal history, or a form that asks whether an AI is filling it in. It won't answer that last one for you either way.
+
+**While the agent works**, the top of the Activity tab shows the run live: the step it's on (find, check, apply), the job being filled, what this run has done so far and what's up next.
 
 **Applying for real.** On the **Activity** tab, set the **Daily limit** and press **Start applying**. The agent works through your priority 1–3 jobs, best first, pausing a minute or two between applications, and stops at the limit. Press **Stop after this one** at any time.
 
@@ -197,5 +201,7 @@ data/     your local database and resume copies (not committed)
 ```
 
 Run `npm run test:submit` to check the submit step against fake application pages served on your own machine (a thank-you page, a redirect, a CAPTCHA, a form error, an emailed code and a page that never answers). Nothing reaches a real employer.
+
+The public showcase page lives in `docs/index.html`. To publish it, turn on GitHub Pages for the repository (Settings → Pages → Deploy from a branch, folder `/docs`).
 
 Jobs are imported from a `jobs.json` file. Point `KIT_DIR` at the folder that contains it if yours lives somewhere else.

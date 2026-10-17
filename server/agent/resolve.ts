@@ -194,7 +194,16 @@ const RULES: Rule[] = [
     answer: (a, _c, f) =>
       /mailing/i.test(f.label) && a.mailing_same === 'No' ? { park: 'Asks for your separate mailing address' } : a.address_line1 ?? '',
   },
-  { test: /\bpronoun/i, answer: () => '' },
+  {
+    // Your saved pronouns, else the form's own "prefer not to say" choice, else left empty.
+    test: /\bpronoun/i,
+    answer: (a, _c, f) => {
+      if (a.pronouns && a.pronouns !== 'Prefer not to say') return a.pronouns
+      const decline = f.options.find((o) => /prefer not|decline|not (to )?(say|disclose|answer)|rather not/i.test(o))
+      if (decline) return decline
+      return a.pronouns === 'Prefer not to say' && f.kind === 'text' ? 'Prefer not to say' : ''
+    },
+  },
 
   // ── Legal
   {

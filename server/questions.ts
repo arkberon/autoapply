@@ -18,6 +18,15 @@ export const QUESTIONS: Question[] = [
     required: false,
   },
   {
+    key: 'pronouns',
+    section: 'About you',
+    label: 'Pronouns',
+    help: 'Some forms require this. Left blank, the app picks the form’s "prefer not to say" choice when it has one.',
+    type: 'select',
+    options: ['He/him', 'She/her', 'They/them', 'Prefer not to say'],
+    required: false,
+  },
+  {
     key: 'middle_name',
     section: 'About you',
     label: 'Middle name',
