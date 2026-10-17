@@ -124,7 +124,7 @@ type Rule = {
 
 const yesIf = (cond: boolean) => (cond ? 'Yes' : 'No')
 
-/** "123 Main St, Apt 4B, Miami, FL 33132", or null when no street is saved. */
+/** "123 Main St, Apt 4B, Anytown, NY 10001", or null when no street is saved. */
 function fullAddress(a: Record<string, string>): string | null {
   if (!a.address_line1) return null
   return [a.address_line1, a.address_line2, `${a.city}, ${a.state} ${a.zip}`.trim()].filter(Boolean).join(', ')
