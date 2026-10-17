@@ -11,6 +11,7 @@ import {
   type WorkArea,
   WORK_AREAS,
 } from '../../shared/types.ts'
+import { CITY_OPTIONS, regionsOf } from '../../shared/regions.ts'
 import { api, timeAgo, type JobDetail } from '../api.ts'
 import { Cleanup } from './Cleanup.tsx'
 
@@ -135,6 +136,7 @@ export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boole
   const [priority, setPriority] = useState<Priority | 0>(0)
   const [mode, setMode] = useState<Mode | ''>('')
   const [area, setArea] = useState<WorkArea | ''>('')
+  const [city, setCity] = useState('')
   const [search, setSearch] = useState('')
   const [view, setView] = useState<View>('todo')
   const [hideClosed, setHideClosed] = useState(false)
@@ -173,12 +175,13 @@ export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boole
         (!priority || j.priority === priority) &&
         (!mode || j.mode === mode) &&
         (!area || (j.area ?? 'Other') === area) &&
+        (!city || regionsOf(j.market, j.location).includes(city)) &&
         (!hideClosed || j.live !== 'closed') &&
         (!term || `${j.company} ${j.role} ${j.market} ${j.ats}`.toLowerCase().includes(term)),
     )
     // Most recent applications first.
     return view === 'applied' ? list.sort((a, b) => (b.applied_at ?? '').localeCompare(a.applied_at ?? '')) : list
-  }, [jobs, view, priority, mode, area, search, hideClosed, onlyFound])
+  }, [jobs, view, priority, mode, area, city, search, hideClosed, onlyFound])
 
   const viewCount = (v: View) => jobs.filter((j) => inView(j, v)).length
   const current = jobs.filter((j) => inView(j, view))
@@ -281,6 +284,16 @@ export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boole
             </button>
           )}
         </div>
+        <select value={city} onChange={(e) => setCity(e.target.value)} aria-label="City">
+          <option value="">Every city</option>
+          {CITY_OPTIONS.map((c) => ({ ...c, n: current.filter((j) => regionsOf(j.market, j.location).includes(c.key)).length }))
+            .filter((c) => c.n > 0)
+            .map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label} ({c.n})
+              </option>
+            ))}
+        </select>
         <select value={area} onChange={(e) => setArea(e.target.value as WorkArea | '')} aria-label="Work area">
           <option value="">Every work area</option>
           {WORK_AREAS.filter((a) => current.some((j) => (j.area ?? 'Other') === a)).map((a) => (

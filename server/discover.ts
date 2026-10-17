@@ -1,3 +1,4 @@
+import { REGIONS } from '../shared/regions.ts'
 import { classifyPending } from './areas.ts'
 import { detectTarget } from './ats.ts'
 import { db, getSetting, logEvent, now, setSetting } from './db.ts'
@@ -27,42 +28,8 @@ interface Posting {
 
 const UA = 'Mozilla/5.0 (compatible; autoapply-personal/0.1; job discovery)'
 
-// Places worth searching, grouped into the market labels the job list uses.
-// Each group's cities are added to the default location filter.
-export const REGIONS: { market: string; cities: string[] }[] = [
-  { market: 'NYC', cities: ['new york', 'nyc', 'brooklyn', 'manhattan', 'jersey city', 'hoboken'] },
-  {
-    market: 'SF Bay Area',
-    cities: [
-      'san francisco', 'sf', 'bay area', 'south san francisco', 'oakland', 'berkeley', 'emeryville', 'san mateo',
-      'foster city', 'burlingame', 'redwood city', 'menlo park', 'palo alto', 'mountain view', 'sunnyvale',
-      'santa clara', 'cupertino', 'san jose', 'milpitas', 'fremont',
-    ],
-  },
-  {
-    market: 'Irvine, CA',
-    cities: [
-      'irvine', 'orange county', 'costa mesa', 'newport beach', 'santa ana', 'tustin', 'anaheim', 'lake forest',
-      'aliso viejo', 'huntington beach',
-    ],
-  },
-  {
-    market: 'LA',
-    cities: [
-      'los angeles', 'santa monica', 'culver city', 'venice', 'playa vista', 'marina del rey', 'el segundo',
-      'hawthorne', 'manhattan beach', 'torrance', 'long beach', 'west hollywood', 'beverly hills', 'century city',
-      'burbank', 'pasadena', 'santa clarita', 'thousand oaks', 'westlake village',
-    ],
-  },
-  {
-    market: 'San Diego',
-    cities: [
-      'san diego', 'la jolla', 'sorrento valley', 'carlsbad', 'del mar', 'encinitas', 'oceanside', 'escondido',
-      'poway', 'rancho bernardo', 'chula vista', 'san marcos',
-    ],
-  },
-  { market: 'Miami', cities: ['miami', 'fort lauderdale'] },
-]
+// The searched cities live in shared/regions.ts, shared with the Jobs tab's city filter.
+export { REGIONS }
 
 const REGION_PLACES = new RegExp(
   `(^|[^a-z0-9])(${REGIONS.flatMap((r) => r.cities).join('|')})($|[^a-z0-9])`,
@@ -87,7 +54,7 @@ export const DISCOVER_DEFAULTS: DiscoverSettings = {
   // Anything above entry level, plus internships, since you have graduated.
   exclude: [
     'senior', 'sr', 'sr.', 'intermediate', 'mid-level', 'mid level', 'staff', 'principal', 'lead', 'manager', 'director', 'head of', 'vp', 'architect', 'ii',
-    'iii', 'iv', 'phd', 'intern', 'internship', 'co-op', 'clearance', 'hardware', 'electrical', 'mechanical', 'rf',
+    'iii', 'iv', 'engineer 2', 'engineer 3', 'developer 2', 'developer 3', 'level 2', 'level 3', 'phd', 'intern', 'internship', 'co-op', 'clearance', 'hardware', 'electrical', 'mechanical', 'rf',
     'manufacturing', 'sales',
   ].join(', '),
   locations: [...REGIONS.flatMap((r) => r.cities), 'remote'].join(', '),
