@@ -1,16 +1,23 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { chromium, type BrowserContext, type Page } from 'playwright-core'
-import { DATA_DIR, db, logEvent, now } from '../db.ts'
+import { DATA_DIR, db, getSetting, logEvent, now } from '../db.ts'
 import { resumeInfo, syncResume } from '../resume.ts'
 import { extractFields, type FormField } from './extract.ts'
 import { emptyRequired, fillField, readComboboxOptions } from './fill.ts'
 import { decide, loadAnswers, type Decision, type JobContext } from './resolve.ts'
+import { submitAndConfirm } from './submit.ts'
 import type { AgentProgress, AgentRun, Job } from '../../shared/types.ts'
 
 // The application agent. A dry run fills real forms and stops before submitting:
 // the code has no submit step in that mode, and as a second safety every request
 // that looks like a submission is blocked at the network level.
+//
+// A live run fills the same way and, only when every required answer is safe,
+// presses submit once. The job is marked "submitting" in the database before the
+// click, so a crash can never lead to a second application; anything short of a
+// clear confirmation leaves the job for the user rather than retrying.
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS runs (
@@ -26,6 +33,9 @@ db.exec(`
     url TEXT NOT NULL
   );
 `)
+if (!db.prepare<[], { name: string }>('PRAGMA table_info(runs)').all().some((c) => c.name === 'receipt')) {
+  db.exec('ALTER TABLE runs ADD COLUMN receipt TEXT')
+}
 
 const PROFILE_DIR = path.join(DATA_DIR, 'browser-profile')
 const RUNS_DIR = path.join(DATA_DIR, 'applications')
@@ -62,21 +72,35 @@ async function pageGone(page: Page): Promise<boolean> {
   )
 }
 
-interface RunResult {
+export interface RunResult {
   outcome: AgentRun['outcome']
   reasons: string[]
   decisions: Decision[]
+  /** The filled form; after a live submit, the page the employer showed next. */
   screenshot: string | null
+  /** Live runs: the filled form just before submit. */
+  filledScreenshot?: string | null
+  confirmation?: string | null
+  /** True once the submit button has been pressed. */
+  pressed?: boolean
 }
 
-async function runJob(context: BrowserContext, job: Job, ctx: JobContext): Promise<RunResult> {
+export interface RunOptions {
+  mode: 'dry' | 'live'
+  /** Called right before submit; returning false cancels it. Marks the job as submitting. */
+  beforeSubmit?: () => boolean
+  confirmTimeoutMs?: number
+}
+
+export async function runJob(context: BrowserContext, job: Job, ctx: JobContext, options: RunOptions = { mode: 'dry' }): Promise<RunResult> {
   const page = await context.newPage()
-  await blockSubmissions(page)
+  if (options.mode === 'dry') await blockSubmissions(page)
   const reasons: string[] = []
   const decisions: Decision[] = []
   const dir = path.join(RUNS_DIR, job.id)
   fs.mkdirSync(dir, { recursive: true })
-  const screenshot = path.join(dir, `dry-run-${Date.now()}.png`)
+  const screenshot = path.join(dir, `${options.mode === 'dry' ? 'dry-run' : 'filled'}-${Date.now()}.png`)
+  let pressed = false
 
   try {
     await page.goto(applyUrl(job), { waitUntil: 'domcontentloaded', timeout: 45_000 })
@@ -138,11 +162,33 @@ async function runJob(context: BrowserContext, job: Job, ctx: JobContext): Promi
     }
 
     await page.screenshot({ path: screenshot, fullPage: true }).catch(() => undefined)
-    return { outcome: reasons.length ? 'parked' : 'ready', reasons: [...new Set(reasons)], decisions, screenshot }
+    if (reasons.length || options.mode === 'dry') {
+      return { outcome: reasons.length ? 'parked' : 'ready', reasons: [...new Set(reasons)], decisions, screenshot }
+    }
+
+    // ── Live: every required answer is safe, so submit once.
+    if (!options.beforeSubmit?.()) {
+      return { outcome: 'parked', reasons: ['Skipped: this job was already applied to or is being submitted'], decisions, screenshot }
+    }
+    pressed = true
+    const result = await submitAndConfirm(page, options.confirmTimeoutMs)
+    const after = path.join(dir, `after-submit-${Date.now()}.png`)
+    await page.screenshot({ path: after, fullPage: true }).catch(() => undefined)
+    return {
+      outcome: result.outcome,
+      reasons: result.reasons,
+      decisions,
+      screenshot: fs.existsSync(after) ? after : screenshot,
+      filledScreenshot: screenshot,
+      confirmation: result.confirmation,
+      pressed,
+    }
   } catch (err) {
     await page.screenshot({ path: screenshot, fullPage: true }).catch(() => undefined)
     return {
-      outcome: 'error',
+      // An error after pressing submit means the application may have gone through.
+      pressed,
+      outcome: pressed ? 'uncertain' : 'error',
       reasons: [err instanceof Error ? err.message.split('\n')[0].slice(0, 200) : String(err)],
       decisions,
       screenshot: fs.existsSync(screenshot) ? screenshot : null,
@@ -154,8 +200,28 @@ async function runJob(context: BrowserContext, job: Job, ctx: JobContext): Promi
 
 // ── Batch control
 
-const progress: AgentProgress = { running: false, mode: null, done: 0, total: 0, current: null, startedAt: null }
+const progress: AgentProgress = {
+  running: false,
+  mode: null,
+  done: 0,
+  total: 0,
+  current: null,
+  startedAt: null,
+  stopping: false,
+  message: null,
+}
 export const agentProgress = (): AgentProgress => ({ ...progress })
+
+export const dailyCap = () => Math.max(1, Number(getSetting('daily_cap', '20')) || 20)
+
+/** Applications confirmed today (local time). */
+export function appliedToday(): number {
+  return db
+    .prepare<[], { n: number }>(
+      "SELECT COUNT(*) AS n FROM runs WHERE mode = 'live' AND outcome = 'applied' AND date(started_at, 'localtime') = date('now', 'localtime')",
+    )
+    .get()!.n
+}
 
 /** Picks jobs for a dry run: the best open ones across the three supported systems. */
 export function pickDryRunJobs(limit: number): Job[] {
@@ -172,14 +238,72 @@ export function pickDryRunJobs(limit: number): Job[] {
     .slice(0, limit)
 }
 
-export function startDryRun(limit = 10, jobIds: string[] = []): AgentProgress {
-  if (progress.running) return agentProgress()
-  const byId = db.prepare<[string], Job>('SELECT * FROM jobs WHERE id = ?')
-  const jobs = jobIds.length ? jobIds.map((id) => byId.get(id)).filter((j): j is Job => Boolean(j)) : pickDryRunJobs(limit)
-  Object.assign(progress, { running: true, mode: 'dry', done: 0, total: jobs.length, current: null, startedAt: now() })
+/**
+ * Jobs a live run may apply to: automatic ones, priority 1–3, never touched by
+ * a live run before (status not_started), best first. Long shots wait for the user.
+ */
+export function pickLiveJobs(limit: number): Job[] {
+  return db
+    .prepare<[number], Job>(`
+      SELECT * FROM jobs
+      WHERE mode = 'auto' AND ats IN ('Greenhouse', 'Ashby', 'Lever') AND status = 'not_started'
+        AND removed = 0 AND live != 'closed' AND dup_of IS NULL AND priority <= 3
+      ORDER BY priority, CASE live WHEN 'open' THEN 0 ELSE 1 END, last_checked DESC
+      LIMIT ?
+    `)
+    .all(limit)
+}
 
-  const insert = db.prepare("INSERT INTO runs (job_id, mode, started_at, url) VALUES (?, 'dry', ?, ?)")
-  const finish = db.prepare('UPDATE runs SET finished_at = ?, outcome = ?, reasons = ?, answers = ?, screenshot = ? WHERE id = ?')
+export function readyForLive(): number {
+  return pickLiveJobs(100000).length
+}
+
+export function stopAgent(): AgentProgress {
+  if (progress.running) progress.stopping = true
+  return agentProgress()
+}
+
+function writeReceipt(job: Job, runId: number, result: RunResult, record: unknown[], resumePath: string): string {
+  const file = path.join(RUNS_DIR, job.id, `receipt-${runId}.json`)
+  const submittedAt = new Date()
+  fs.writeFileSync(
+    file,
+    JSON.stringify(
+      {
+        job_id: job.id,
+        company: job.company,
+        role: job.role,
+        url: applyUrl(job),
+        submitted_at: submittedAt.toISOString(),
+        submitted_at_local: submittedAt.toString(),
+        confirmation: result.confirmation,
+        resume: { file: path.basename(resumePath), sha256: crypto.createHash('sha256').update(fs.readFileSync(resumePath)).digest('hex') },
+        screenshots: { filled: result.filledScreenshot, after_submit: result.screenshot },
+        answers: record,
+      },
+      null,
+      2,
+    ),
+  )
+  return file
+}
+
+function runBatch(mode: 'dry' | 'live', jobs: Job[]) {
+  Object.assign(progress, {
+    running: true,
+    mode,
+    done: 0,
+    total: jobs.length,
+    current: null,
+    startedAt: now(),
+    stopping: false,
+    message: null,
+  })
+
+  const insert = db.prepare('INSERT INTO runs (job_id, mode, started_at, url) VALUES (?, ?, ?, ?)')
+  const finish = db.prepare('UPDATE runs SET finished_at = ?, outcome = ?, reasons = ?, answers = ?, screenshot = ?, receipt = ? WHERE id = ?')
+  const setStatus = db.prepare('UPDATE jobs SET status = ?, applied_at = COALESCE(?, applied_at) WHERE id = ?')
+  let applied = 0
 
   void (async () => {
     let context: BrowserContext | null = null
@@ -197,19 +321,36 @@ export function startDryRun(limit = 10, jobIds: string[] = []): AgentProgress {
       // tsx keeps function names with a __name() helper; code sent into the page needs it too.
       await context.addInitScript('globalThis.__name = (fn) => fn')
 
-      for (const job of jobs) {
+      for (const [i, job] of jobs.entries()) {
+        if (progress.stopping) {
+          progress.message = 'Stopped when you asked.'
+          break
+        }
+        if (mode === 'live' && appliedToday() >= dailyCap()) {
+          progress.message = `Reached today's limit of ${dailyCap()} applications.`
+          break
+        }
+
         progress.current = `${job.company} · ${job.role}`
-        const runId = Number(insert.run(job.id, now(), applyUrl(job)).lastInsertRowid)
+        const runId = Number(insert.run(job.id, mode, now(), applyUrl(job)).lastInsertRowid)
         const drafts = db.prepare<[string], { label: string; value: string }>('SELECT label, value FROM drafts WHERE job_id = ?').all(job.id)
-        const result = await runJob(context, job, {
-          id: job.id,
-          company: job.company,
-          role: job.role,
-          location: job.location || job.market,
-          answers,
-          drafts,
-          resumePath,
-        })
+
+        // Claims the job just before submit; refuses if anything else already did.
+        const beforeSubmit = () =>
+          db.transaction(() => {
+            const current = db.prepare<[string], { status: string }>('SELECT status FROM jobs WHERE id = ?').get(job.id)
+            if (current?.status !== 'not_started') return false
+            setStatus.run('submitting', null, job.id)
+            db.prepare("UPDATE runs SET outcome = 'submitting' WHERE id = ?").run(runId)
+            return true
+          })()
+
+        const result = await runJob(
+          context,
+          job,
+          { id: job.id, company: job.company, role: job.role, location: job.location || job.market, answers, drafts, resumePath },
+          { mode, beforeSubmit },
+        )
         const record = result.decisions.map((d) => ({
           question: d.field.label,
           kind: d.field.kind,
@@ -218,19 +359,69 @@ export function startDryRun(limit = 10, jobIds: string[] = []): AgentProgress {
           source: d.source,
           note: d.park ?? d.note ?? null,
         }))
-        finish.run(now(), result.outcome, JSON.stringify(result.reasons), JSON.stringify(record), result.screenshot, runId)
-        fs.writeFileSync(path.join(RUNS_DIR, job.id, 'dry-run-answers.json'), JSON.stringify({ job: job.id, url: applyUrl(job), ...result, decisions: record }, null, 2))
+
+        let receipt: string | null = null
+        if (mode === 'live') {
+          if (result.outcome === 'applied') {
+            receipt = writeReceipt(job, runId, result, record, resumePath)
+            setStatus.run('applied', now(), job.id)
+            applied++
+          } else if (result.outcome === 'uncertain') setStatus.run('uncertain', null, job.id)
+          else if (result.outcome === 'parked') setStatus.run('needs_you', null, job.id)
+          else if (result.outcome === 'error') setStatus.run('failed', null, job.id)
+          logEvent(job.id, `live_${result.outcome}`, result.reasons.join('; '))
+        } else {
+          fs.writeFileSync(
+            path.join(RUNS_DIR, job.id, 'dry-run-answers.json'),
+            JSON.stringify({ job: job.id, url: applyUrl(job), ...result, decisions: record }, null, 2),
+          )
+        }
+        finish.run(now(), result.outcome, JSON.stringify(result.reasons), JSON.stringify(record), result.screenshot, receipt, runId)
         progress.done++
-        await pause(1500)
+
+        // A person-like pace between real applications; a stop request cuts it short.
+        if (mode === 'live' && i < jobs.length - 1) {
+          const wait = 60_000 + Math.random() * 60_000
+          for (let t = 0; t < wait && !progress.stopping; t += 1000) await pause(1000)
+        } else {
+          await pause(1500)
+        }
       }
+      if (!progress.message && mode === 'live') progress.message = `Finished: ${applied} applied.`
     } catch (err) {
-      logEvent(null, 'agent_error', err instanceof Error ? err.message : String(err))
+      progress.message = err instanceof Error ? err.message : String(err)
+      logEvent(null, 'agent_error', progress.message)
     } finally {
       await context?.close().catch(() => undefined)
-      Object.assign(progress, { running: false, current: null })
-      logEvent(null, 'dry_run', `${progress.done} of ${progress.total} jobs`)
+      Object.assign(progress, { running: false, current: null, stopping: false })
+      logEvent(null, mode === 'live' ? 'live_run' : 'dry_run', `${progress.done} of ${progress.total} jobs, ${applied} applied`)
     }
   })()
+}
+
+export function startDryRun(limit = 10, jobIds: string[] = []): AgentProgress {
+  if (progress.running) return agentProgress()
+  const byId = db.prepare<[string], Job>('SELECT * FROM jobs WHERE id = ?')
+  const jobs = jobIds.length ? jobIds.map((id) => byId.get(id)).filter((j): j is Job => Boolean(j)) : pickDryRunJobs(limit)
+  runBatch('dry', jobs)
+  return agentProgress()
+}
+
+/** Starts submitting real applications, up to what is left of today's limit. */
+export function startLive(limit?: number): AgentProgress {
+  if (progress.running) return agentProgress()
+  const left = dailyCap() - appliedToday()
+  if (left <= 0) {
+    progress.message = `Today's limit of ${dailyCap()} applications is already reached.`
+    return agentProgress()
+  }
+  // A few extra in case some park; the limit is enforced before each job anyway.
+  const jobs = pickLiveJobs(Math.min(limit ?? left, left) + 10)
+  if (jobs.length === 0) {
+    progress.message = 'No jobs are ready for automatic applying.'
+    return agentProgress()
+  }
+  runBatch('live', jobs)
   return agentProgress()
 }
 
@@ -244,22 +435,25 @@ interface RunRow {
   reasons: string
   answers: string
   screenshot: string | null
+  receipt: string | null
   url: string
   company: string
   role: string
   ats: string
+  job_status: string
 }
 
 export function listRuns(limit = 100): AgentRun[] {
   return db
     .prepare<[number], RunRow>(`
-      SELECT runs.*, jobs.company, jobs.role, jobs.ats FROM runs JOIN jobs ON jobs.id = runs.job_id
+      SELECT runs.*, jobs.company, jobs.role, jobs.ats, jobs.status AS job_status FROM runs JOIN jobs ON jobs.id = runs.job_id
       ORDER BY runs.id DESC LIMIT ?
     `)
     .all(limit)
     .map((r) => ({
       id: r.id,
       jobId: r.job_id,
+      jobStatus: r.job_status as AgentRun['jobStatus'],
       company: r.company,
       role: r.role,
       ats: r.ats,
@@ -270,6 +464,7 @@ export function listRuns(limit = 100): AgentRun[] {
       reasons: JSON.parse(r.reasons),
       answers: JSON.parse(r.answers),
       hasScreenshot: Boolean(r.screenshot && fs.existsSync(r.screenshot)),
+      hasReceipt: Boolean(r.receipt && fs.existsSync(r.receipt)),
       url: r.url,
     }))
 }
@@ -277,4 +472,9 @@ export function listRuns(limit = 100): AgentRun[] {
 export function runScreenshot(id: number): string | null {
   const row = db.prepare<[number], { screenshot: string | null }>('SELECT screenshot FROM runs WHERE id = ?').get(id)
   return row?.screenshot && fs.existsSync(row.screenshot) ? row.screenshot : null
+}
+
+export function runReceipt(id: number): string | null {
+  const row = db.prepare<[number], { receipt: string | null }>('SELECT receipt FROM runs WHERE id = ?').get(id)
+  return row?.receipt && fs.existsSync(row.receipt) ? row.receipt : null
 }

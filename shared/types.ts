@@ -171,6 +171,10 @@ export interface AgentProgress {
   /** "Company · Role" of the job being worked on. */
   current: string | null
   startedAt: string | null
+  /** Set while a stop request waits for the current application to finish. */
+  stopping: boolean
+  /** How the last run ended, or why one could not start. */
+  message: string | null
 }
 
 export interface AgentAnswer {
@@ -186,6 +190,8 @@ export interface AgentAnswer {
 export interface AgentRun {
   id: number
   jobId: string
+  /** The job's status now, which may have moved on since this run. */
+  jobStatus: Status
   company: string
   role: string
   ats: string
@@ -193,10 +199,11 @@ export interface AgentRun {
   startedAt: string
   finishedAt: string | null
   /** ready = would submit; parked = needs you; closed = posting gone. */
-  outcome: 'running' | 'ready' | 'parked' | 'closed' | 'error' | 'applied'
+  outcome: 'running' | 'ready' | 'parked' | 'closed' | 'error' | 'applied' | 'submitting' | 'uncertain'
   reasons: string[]
   answers: AgentAnswer[]
   hasScreenshot: boolean
+  hasReceipt: boolean
   url: string
 }
 

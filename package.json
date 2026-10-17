@@ -7,7 +7,8 @@
     "start": "vite build && node --import tsx server/index.ts",
     "dev": "concurrently -k -n api,web \"node --watch --import tsx server/index.ts\" \"vite\"",
     "import": "node --import tsx server/import.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:submit": "node --import tsx scripts/live-submit-test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.4",

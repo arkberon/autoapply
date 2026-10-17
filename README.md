@@ -6,7 +6,7 @@ You have a spreadsheet of 200+ jobs. Every application asks the same twenty ques
 
 Everything runs on your own computer. Your answers live in a local database, and the AI model runs locally too, so nothing about you is sent to an AI company.
 
-> **Status:** the application agent can fill real Ashby, Greenhouse and Lever forms in a **dry run** (it stops before submitting). Live submitting, receipts and the daily schedule are the next pieces.
+> **Status:** the application agent applies on its own to Ashby, Greenhouse and Lever jobs, with a daily limit and a receipt for every application. A daily schedule is the next piece.
 
 ---
 
@@ -118,7 +118,14 @@ How it decides each answer, in order:
 
 When it can't answer safely, it **parks** the job in *Needs you* and says why: no saved answer, a file it doesn't have, a question about criminal history, or a form that asks whether an AI is filling it in. It won't answer that last one for you either way.
 
-On the **Activity** tab, press **Start dry run**. Each job shows whether it's *Ready to submit* or *Needs you*, every question with the answer and where it came from, and a screenshot of the filled form.
+**Applying for real.** On the **Activity** tab, set the **Daily limit** and press **Start applying**. The agent works through your priority 1–3 jobs, best first, pausing a minute or two between applications, and stops at the limit. Press **Stop after this one** at any time.
+
+- It presses submit **once** per job, and marks the job as *submitting* before it does, so a crash can never send a second application.
+- A clear confirmation from the employer moves the job to **Applied** and saves a **receipt**: time, confirmation text, every answer sent, the resume file and screenshots before and after.
+- A CAPTCHA, a form error or an emailed verification code puts the job in **Needs you**, with the reason. Fix the cause (often a missing Setup answer) and press **Try again**.
+- If it pressed submit but never saw a confirmation, the job shows **Check result** and is never retried on its own. Check your email or the employer site first; trying again could apply twice.
+
+**Dry runs** still work the same way: on the **Activity** tab, press **Dry run 10**. Each job shows whether it's *Ready to submit* or *Needs you*, every question with the answer and where it came from, and a screenshot of the filled form.
 
 ### ⚙️ Settings
 - **Resume:** paste your Google Docs link. The doc must be shared as *Anyone with the link can view*.
@@ -184,5 +191,7 @@ src/      the dashboard (React)
 shared/   types used by both
 data/     your local database and resume copies (not committed)
 ```
+
+Run `npm run test:submit` to check the submit step against fake application pages served on your own machine (a thank-you page, a redirect, a CAPTCHA, a form error, an emailed code and a page that never answers). Nothing reaches a real employer.
 
 Jobs are imported from a `jobs.json` file. Point `KIT_DIR` at the folder that contains it if yours lives somewhere else.

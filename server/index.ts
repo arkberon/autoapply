@@ -8,7 +8,18 @@ import { APP_DIR, db, getSetting, logEvent, now, setSetting } from './db.ts'
 import { addBoard, discoverProgress, discoverSettings, DISCOVER_DEFAULTS, parseBoardUrl, startDiscover, watchedBoards } from './discover.ts'
 import { classifyPending } from './areas.ts'
 import { runImport } from './import.ts'
-import { agentProgress, listRuns, runScreenshot, startDryRun } from './agent/run.ts'
+import {
+  agentProgress,
+  appliedToday,
+  dailyCap,
+  listRuns,
+  readyForLive,
+  runReceipt,
+  runScreenshot,
+  startDryRun,
+  startLive,
+  stopAgent,
+} from './agent/run.ts'
 import { addLinkAsJob, addPage, checkAllPages, checkPage, deletePage, listPages, markSeen, updatePage } from './links.ts'
 import { DEFAULT_LLM_BASE_URL, llmConfig, testLlm } from './llm.ts'
 import { QUESTIONS, SECTION_NOTES } from './questions.ts'
@@ -194,7 +205,34 @@ app.post('/api/pages/:id/add-job', async (c) => {
 
 // ── Application agent
 
-app.get('/api/agent', (c) => c.json({ progress: agentProgress(), runs: listRuns() }))
+app.get('/api/agent', (c) =>
+  c.json({
+    progress: agentProgress(),
+    runs: listRuns(),
+    today: { applied: appliedToday(), cap: dailyCap(), ready: readyForLive() },
+  }),
+)
+
+// Submits real applications. Only ever started by the user from the Activity tab.
+app.post('/api/agent/live', async (c) => {
+  const body = z.object({ limit: z.number().int().min(1).max(100).optional() }).safeParse(await c.req.json().catch(() => ({})))
+  return c.json(startLive(body.success ? body.data.limit : undefined))
+})
+
+app.post('/api/agent/stop', (c) => c.json(stopAgent()))
+
+app.put('/api/agent/settings', async (c) => {
+  const body = z.object({ dailyCap: z.number().int().min(1).max(100) }).safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'The daily limit must be between 1 and 100' }, 400)
+  setSetting('daily_cap', String(body.data.dailyCap))
+  return c.json({ cap: dailyCap() })
+})
+
+app.get('/api/agent/runs/:id/receipt', (c) => {
+  const file = runReceipt(Number(c.req.param('id')))
+  if (!file) return c.json({ error: 'No receipt' }, 404)
+  return c.body(fs.readFileSync(file), 200, { 'content-type': 'application/json' })
+})
 
 app.post('/api/agent/dry-run', async (c) => {
   const body = z

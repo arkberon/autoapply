@@ -563,6 +563,19 @@ label {
 
 /* ── Activity */
 
+.cap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.cap select {
+  width: auto;
+}
+
 .run-head {
   display: flex;
   align-items: flex-start;

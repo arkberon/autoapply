@@ -5,8 +5,10 @@ import { api, timeAgo } from '../api.ts'
 const OUTCOME: Record<AgentRun['outcome'], { label: string; tone: string }> = {
   running: { label: 'Working…', tone: '' },
   ready: { label: 'Ready to submit', tone: 'ok' },
+  submitting: { label: 'Submitting…', tone: '' },
   applied: { label: 'Applied', tone: 'ok' },
   parked: { label: 'Needs you', tone: 'warn' },
+  uncertain: { label: 'Check result', tone: 'warn' },
   closed: { label: 'Posting closed', tone: '' },
   error: { label: 'Something went wrong', tone: 'warn' },
 }
@@ -19,10 +21,25 @@ const SOURCE: Record<string, string> = {
   'resume-file': 'Your resume',
 }
 
-function RunCard({ run }: { run: AgentRun }) {
+const CAPS = [5, 10, 20, 30]
+
+function RunCard({ run, onRetry }: { run: AgentRun; onRetry: () => void }) {
   const outcome = OUTCOME[run.outcome]
   const filled = run.answers.filter((a) => a.answer.length > 0)
   const written = run.answers.filter((a) => a.source === 'model' && a.kind === 'textarea').length
+  // A live run that did not end in an application can be retried once the job is free again.
+  const canRetry =
+    run.mode === 'live' && ['parked', 'uncertain', 'error'].includes(run.outcome) && ['needs_you', 'uncertain', 'failed'].includes(run.jobStatus)
+
+  const retry = async () => {
+    const warning =
+      run.outcome === 'uncertain'
+        ? 'The agent pressed submit but saw no confirmation. Check your email and the employer site first: if the application went through, trying again would apply twice. Try again anyway?'
+        : 'Put this job back in the queue for the next run?'
+    if (!window.confirm(warning)) return
+    await api.patchJob(run.jobId, { status: 'not_started' })
+    onRetry()
+  }
 
   return (
     <section className="card run">
@@ -37,6 +54,11 @@ function RunCard({ run }: { run: AgentRun }) {
           </span>
         </div>
         <div className="page-actions">
+          {run.hasReceipt && (
+            <a className="button" href={`/api/agent/runs/${run.id}/receipt`} target="_blank" rel="noreferrer">
+              Receipt
+            </a>
+          )}
           {run.hasScreenshot && (
             <a className="button" href={`/api/agent/runs/${run.id}/screenshot`} target="_blank" rel="noreferrer">
               Screenshot
@@ -45,6 +67,7 @@ function RunCard({ run }: { run: AgentRun }) {
           <a className="button" href={run.url} target="_blank" rel="noreferrer">
             Open form
           </a>
+          {canRetry && <button onClick={retry}>Try again</button>}
         </div>
       </div>
 
@@ -88,11 +111,14 @@ function RunCard({ run }: { run: AgentRun }) {
 export function Activity() {
   const [progress, setProgress] = useState<AgentProgress | null>(null)
   const [runs, setRuns] = useState<AgentRun[]>([])
+  const [today, setToday] = useState({ applied: 0, cap: 20, ready: 0 })
+  const [filter, setFilter] = useState<'all' | 'live' | 'dry'>('all')
 
   const load = useCallback(async () => {
     const data = await api.agent()
     setProgress(data.progress)
     setRuns(data.runs)
+    setToday(data.today)
   }, [])
 
   useEffect(() => {
@@ -105,44 +131,109 @@ export function Activity() {
     return () => clearInterval(timer)
   }, [progress?.running, load])
 
-  const start = async () => {
+  if (!progress) return null
+
+  const left = Math.max(0, today.cap - today.applied)
+  const live = progress.running && progress.mode === 'live'
+
+  const startLive = async () => {
+    const n = Math.min(left, today.ready)
+    const ok = window.confirm(
+      `The agent will submit real applications to up to ${n} employers now, using your saved answers and your resume. ` +
+        'Jobs it cannot answer safely are left for you. Continue?',
+    )
+    if (!ok) return
+    setProgress(await api.startLive())
+    void load()
+  }
+
+  const startDry = async () => {
     setProgress(await api.startDryRun(10))
     void load()
   }
 
-  if (!progress) return null
-  const ready = runs.filter((r) => r.outcome === 'ready').length
-  const parked = runs.filter((r) => r.outcome === 'parked').length
+  const setCap = async (cap: number) => {
+    await api.setDailyCap(cap)
+    void load()
+  }
+
+  const shown = runs.filter((r) => filter === 'all' || r.mode === filter)
+  const count = (outcome: AgentRun['outcome']) => runs.filter((r) => r.mode === 'live' && r.outcome === outcome).length
 
   return (
     <>
       <h1>Activity</h1>
       <p className="lead">
-        What the application agent did, job by job: every answer it gave, where each answer came from, and a screenshot of
-        the filled form.
+        What the application agent did, job by job: every answer it gave, where each answer came from, a screenshot, and
+        a receipt for every application it sent.
       </p>
+
+      <section className="card find">
+        <div>
+          <strong>Apply automatically</strong>
+          <span className="muted small">
+            {live
+              ? progress.stopping
+                ? `Finishing ${progress.current ?? 'the current application'}, then stopping.`
+                : `Applying to ${progress.current ?? '…'} (${progress.done + 1} of up to ${progress.total}). A Chrome window shows it working; it pauses a minute or two between applications.`
+              : `${today.ready} jobs ready · ${today.applied} of ${today.cap} applied today. Priorities 1–3 on Ashby, Greenhouse and Lever; anything it can't answer safely waits for you.`}
+          </span>
+        </div>
+        <label className="cap">
+          Daily limit
+          <select value={today.cap} onChange={(e) => setCap(Number(e.target.value))} disabled={live}>
+            {[...new Set([...CAPS, today.cap])].sort((a, b) => a - b).map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        {live ? (
+          <button onClick={async () => setProgress(await api.stopAgent())} disabled={progress.stopping}>
+            {progress.stopping ? 'Stopping…' : 'Stop after this one'}
+          </button>
+        ) : (
+          <button className="primary" onClick={startLive} disabled={progress.running || left === 0 || today.ready === 0}>
+            {left === 0 ? 'Limit reached today' : 'Start applying'}
+          </button>
+        )}
+      </section>
 
       <section className="card find">
         <div>
           <strong>Dry run</strong>
           <span className="muted small">
-            {progress.running
-              ? `Filling ${progress.current ?? '…'} (${progress.done + 1} of ${progress.total}). A Chrome window shows it working.`
-              : 'Fills 10 real application forms exactly as the agent would, then stops before submitting. Nothing is sent to employers.'}
+            {progress.running && progress.mode === 'dry'
+              ? `Filling ${progress.current ?? '…'} (${progress.done + 1} of ${progress.total}).`
+              : 'Fills 10 forms exactly as the agent would, then stops before submitting. Nothing is sent to employers.'}
           </span>
         </div>
-        <button className="primary" onClick={start} disabled={progress.running}>
-          {progress.running ? 'Running…' : runs.length ? 'Dry run 10 more' : 'Start dry run'}
+        <button onClick={startDry} disabled={progress.running}>
+          {progress.running && progress.mode === 'dry' ? 'Running…' : 'Dry run 10'}
         </button>
       </section>
 
+      {progress.message && !progress.running && <p className="banner ok">{progress.message}</p>}
+
       {runs.length > 0 && (
-        <p className="muted small">
-          {runs.length} runs · {ready} would submit as is · {parked} need you
-        </p>
+        <div className="views" role="tablist">
+          {(
+            [
+              ['all', 'All runs'],
+              ['live', `Live · ${count('applied')} applied, ${count('parked') + count('uncertain')} need you`],
+              ['dry', 'Dry runs'],
+            ] as const
+          ).map(([v, label]) => (
+            <button key={v} role="tab" aria-selected={filter === v} className={filter === v ? 'view active' : 'view'} onClick={() => setFilter(v)}>
+              {label}
+            </button>
+          ))}
+        </div>
       )}
-      {runs.map((run) => (
-        <RunCard key={run.id} run={run} />
+
+      {shown.map((run) => (
+        <RunCard key={run.id} run={run} onRetry={load} />
       ))}
       {runs.length === 0 && !progress.running && <p className="empty muted">No runs yet.</p>}
     </>

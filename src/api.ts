@@ -55,7 +55,11 @@ export const api = {
   checkAllPages: () => request<SavedPage[]>('/pages/check', 'POST'),
   markPageSeen: (id: number) => request<SavedPage>(`/pages/${id}/seen`, 'POST'),
   addLinkAsJob: (id: number, link: PageLink) => request<{ id: string; added: boolean }>(`/pages/${id}/add-job`, 'POST', link),
-  agent: () => request<{ progress: AgentProgress; runs: AgentRun[] }>('/agent'),
+  agent: () =>
+    request<{ progress: AgentProgress; runs: AgentRun[]; today: { applied: number; cap: number; ready: number } }>('/agent'),
+  startLive: () => request<AgentProgress>('/agent/live', 'POST', {}),
+  stopAgent: () => request<AgentProgress>('/agent/stop', 'POST'),
+  setDailyCap: (dailyCap: number) => request<{ cap: number }>('/agent/settings', 'PUT', { dailyCap }),
   startDryRun: (limit = 10) => request<AgentProgress>('/agent/dry-run', 'POST', { limit }),
   questions: () =>
     request<{ questions: Question[]; sectionNotes: Record<string, string>; answers: Answer[] }>('/questions'),
