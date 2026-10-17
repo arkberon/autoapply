@@ -6,7 +6,7 @@ You have a spreadsheet of 200+ jobs. Every application asks the same twenty ques
 
 Everything runs on your own computer. Your answers live in a local database, and the AI model runs locally too, so nothing about you is sent to an AI company.
 
-> **Status:** the setup, job list and posting checks work today. Automatic form filling is the next piece being built.
+> **Status:** the application agent applies on its own to Ashby, Greenhouse and Lever jobs, with a daily limit and a receipt for every application. A daily schedule is the next piece.
 
 ---
 
@@ -55,15 +55,17 @@ Machines with less than 32 GB of memory should pick a smaller model, such as an 
 
 ## A tour of the app
 
-### 🏠 Home: your checklist
-Four steps, each with one button:
+The app is dark by design, built around one question: *what is the agent doing, and what does it need from me?*
 
-1. **Answer the setup questions**
-2. **Resume:** synced from your Google Doc
-3. **Local model:** connected and answering
-4. **Check which jobs are still open**
+### 📊 Dashboard
+- **Agent status.** A band at the top says what's happening right now: idle, on autopilot (with the next run time), a daily run in progress, or applying now with live progress. A ring shows today's applications against your daily limit. Start applying, run a dry run, turn the schedule on or off, or share your progress from here.
+- **Totals and pipeline.** Applied, to apply, ready for the agent and found by the agent, plus a pipeline from found to applied.
+- **By work area and priority mix,** so you can see where your search is pointed.
+- **Needs you.** Jobs the agent couldn't finish, each with the reason and a one-click *Open form* or *Try again*.
+- **Recent agent runs** and a **setup health** strip (resume, local model, setup answers, posting checks), each with a fix-it button when something needs attention.
 
-Below the checklist you'll see your jobs by priority, and how each one will get applied.
+### 📣 Share
+Press **Share** on the Dashboard for a 1080 × 1350 image of your progress, sized for Instagram, LinkedIn and X. Pick an accent, adjust the count and download it as a PNG.
 
 ### ✍️ Setup questions
 Fill in the fields marked **Needed**; everything else is optional. Answers save as you type, so there's no Save button to forget.
@@ -75,7 +77,8 @@ Fill in the fields marked **Needed**; everything else is optional. Answers save 
 ### 📋 Jobs
 Your whole list, in the order the app will work through it.
 
-- **Filter** by priority, by how a job gets applied, or search for a company.
+- **Filter** by priority, by **work area**, by how a job gets applied, or search for a company.
+- **Work areas.** Every job is sorted automatically into an area: Software engineering, IT, QA & testing, Technical support, Customer support, Data & analytics, Field engineering, Construction, Clerical & admin, Implementation & onboarding, Sales & business, Design or Other. Jobs found later are sorted the moment they arrive. The job title decides most of them; your local model sorts the rest from the same list. Open a job to change its area; the app keeps your choice.
 - **Change a priority** with the dropdown on the left of any row. Your choice sticks.
 - **Click a row** to see why it got its priority, the salary, whether the posting is open, and any answers already drafted for it.
 - Switch between **To apply**, **Applied** (newest first, with the date) and **Removed** at the top of the list.
@@ -89,7 +92,8 @@ On the **To apply** view, press **Clean up…** and type words that don't fit wh
 At the top of the Jobs tab, press **Find new jobs**. The app reads the public job boards (Greenhouse, Ashby and Lever) of every company already on your list and adds openings that match your filters. They show up with a green **New** tag, and the **Found by the app** chip lists only those.
 
 - Titles that say *new grad*, *junior*, *entry-level* or *Engineer I* land at **Good chance**; the rest land at **Stretch**, so you can check the requirements.
-- Out of the box it searches New York, the San Francisco Bay Area (SF, Oakland, Palo Alto, Mountain View, San Jose and more), Los Angeles and its tech hubs (Santa Monica, Playa Vista, El Segundo, Long Beach and more), Orange County, Miami and US-remote roles.
+- Out of the box it looks for **entry-level software and IT roles** (developer, QA, IT support, help desk, desktop support, systems administrator and similar) and skips anything senior, lead, mid-level or an internship.
+- It searches New York, the San Francisco Bay Area (SF, Oakland, Palo Alto, Mountain View, San Jose and more), Los Angeles and its tech hubs (Santa Monica, Playa Vista, El Segundo, Long Beach and more), Orange County, San Diego (including La Jolla, Sorrento Valley and Carlsbad), Miami and US-remote roles.
 - Change what counts as a match under **Settings → Finding new jobs**: title words, words to skip, locations and how recent a posting must be.
 - Tightened a filter? The next search clears earlier finds that no longer match, unless you already touched them (changed the priority, applied or removed).
 - Want a company that isn't on your list? Paste its job board link under **Watch another company**.
@@ -103,6 +107,33 @@ Some of the best leads are pages that list lots of jobs at once, like a staffing
 - **Rename or add a note** to remember who to contact or what to look for.
 
 Pages that load their jobs with JavaScript can't be read this way; the app will say so, and you can still keep them here as a bookmark.
+
+### 🤖 Activity: the application agent
+The agent opens each application in its own Chrome window, reads every question, answers it, uploads your resume and takes a screenshot. Right now it runs as a **dry run**: it never presses submit, and it also blocks any submission the page tries to send.
+
+It knows the many ways forms ask for the same contact details: street address as one line or in parts, apartment or suite, state as "FL" or "Florida", country as "United States" or "USA", phone type, time zone, middle name, "confirm your email" and similar. Fill in the address section of Setup once and these are covered.
+
+How it decides each answer, in order:
+1. **Your setup answers.** Legal questions (work authorization, sponsorship, citizenship, criminal history) are *only* ever answered from these.
+2. **Answers already drafted** for that job.
+3. **Your local model**, which picks from the form's own choices or writes a short answer (150 words maximum) using only facts from your resume.
+
+When it can't answer safely, it **parks** the job in *Needs you* and says why: no saved answer, a file it doesn't have, a question about criminal history, or a form that asks whether an AI is filling it in. It won't answer that last one for you either way.
+
+**While the agent works**, the top of the Activity tab shows the run live: the step it's on (find, check, apply), the job being filled, what this run has done so far and what's up next.
+
+**Applying for real.** On the **Activity** tab, set the **Daily limit** and press **Start applying**. The agent works through your priority 1–3 jobs, best first, pausing a minute or two between applications, and stops at the limit. Press **Stop after this one** at any time.
+
+- It presses submit **once** per job, and marks the job as *submitting* before it does, so a crash can never send a second application.
+- A clear confirmation from the employer moves the job to **Applied** and saves a **receipt**: time, confirmation text, every answer sent, the resume file and screenshots before and after.
+- A CAPTCHA, a form error or an emailed verification code puts the job in **Needs you**, with the reason. Fix the cause (often a missing Setup answer) and press **Try again**.
+- If it pressed submit but never saw a confirmation, the job shows **Check result** and is never retried on its own. Check your email or the employer site first; trying again could apply twice.
+
+**Daily schedule.** On the **Activity** tab, turn on **Daily schedule** and pick a time (every weekday or every day). At that time the app finds new jobs, re-checks which postings are still open, then applies up to your daily limit, all without asking. The app has to be open and your Mac awake; if you open it later that day, the day's run starts then. Turning it on, or moving the time, after today's time has passed starts from tomorrow.
+
+**Notifications and reports.** After every real run a Mac notification sums it up, for example *Applied to 18 · 3 need you*, and a short report is added to `data/reports/<date>.md` listing what was applied to, what needs you and why. Use **Send a test notification** to check they appear; if not, allow notifications for *Script Editor* in System Settings → Notifications.
+
+**Dry runs** still work the same way: on the **Activity** tab, press **Dry run 10**. Each job shows whether it's *Ready to submit* or *Needs you*, every question with the answer and where it came from, and a screenshot of the filled form.
 
 ### ⚙️ Settings
 - **Resume:** paste your Google Docs link. The doc must be shared as *Anyone with the link can view*.
@@ -168,5 +199,9 @@ src/      the dashboard (React)
 shared/   types used by both
 data/     your local database and resume copies (not committed)
 ```
+
+Run `npm run test:submit` to check the submit step against fake application pages served on your own machine (a thank-you page, a redirect, a CAPTCHA, a form error, an emailed code and a page that never answers). Nothing reaches a real employer.
+
+The public showcase page lives in `docs/index.html`. To publish it, turn on GitHub Pages for the repository (Settings → Pages → Deploy from a branch, folder `/docs`).
 
 Jobs are imported from a `jobs.json` file. Point `KIT_DIR` at the folder that contains it if yours lives somewhere else.

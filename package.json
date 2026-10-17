@@ -7,12 +7,14 @@
     "start": "vite build && node --import tsx server/index.ts",
     "dev": "concurrently -k -n api,web \"node --watch --import tsx server/index.ts\" \"vite\"",
     "import": "node --import tsx server/import.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:submit": "node --import tsx scripts/live-submit-test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.4",
     "better-sqlite3": "^12.11.1",
     "hono": "^4.13.13",
+    "playwright-core": "^1.64.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zod": "^4.6.6"

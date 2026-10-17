@@ -5,6 +5,25 @@ export type Mode = 'auto' | 'review' | 'assist' | 'manual' | 'email'
 
 export type Live = 'open' | 'closed' | 'unknown'
 
+/** Work areas a job can be sorted into. */
+export const WORK_AREAS = [
+  'Software engineering',
+  'IT',
+  'QA & testing',
+  'Technical support',
+  'Customer support',
+  'Data & analytics',
+  'Field engineering',
+  'Construction',
+  'Clerical & admin',
+  'Implementation & onboarding',
+  'Sales & business',
+  'Design',
+  'Other',
+] as const
+
+export type WorkArea = (typeof WORK_AREAS)[number]
+
 export type Status =
   | 'not_started'
   | 'queued'
@@ -48,6 +67,10 @@ export interface Job {
   removed: 0 | 1
   /** Set when the job was found on a company board by the app rather than imported from the sheet. */
   discovered_at: string | null
+  /** Filled in automatically when the job is added; null only until classification runs. */
+  area: WorkArea | null
+  /** rule, model or you. */
+  area_source: string | null
   draft_count: number
 }
 
@@ -140,12 +163,90 @@ export interface SavedPage {
   newLinks: (PageLink & { onList: boolean })[]
 }
 
+export interface AgentProgress {
+  running: boolean
+  mode: 'dry' | 'live' | null
+  done: number
+  total: number
+  /** "Company · Role" of the job being worked on. */
+  current: string | null
+  startedAt: string | null
+  /** Set while a stop request waits for the current application to finish. */
+  stopping: boolean
+  /** How the last run ended, or why one could not start. */
+  message: string | null
+}
+
+export interface AgentAnswer {
+  question: string
+  kind: string
+  required: boolean
+  answer: string[]
+  /** Where the answer came from: saved, draft, model, rule or resume-file. */
+  source: string | null
+  note: string | null
+}
+
+export interface AgentRun {
+  id: number
+  jobId: string
+  /** The job's status now, which may have moved on since this run. */
+  jobStatus: Status
+  company: string
+  role: string
+  ats: string
+  mode: 'dry' | 'live'
+  startedAt: string
+  finishedAt: string | null
+  /** ready = would submit; parked = needs you; closed = posting gone. */
+  outcome: 'running' | 'ready' | 'parked' | 'closed' | 'error' | 'applied' | 'submitting' | 'uncertain'
+  reasons: string[]
+  answers: AgentAnswer[]
+  hasScreenshot: boolean
+  hasReceipt: boolean
+  url: string
+}
+
+export interface ScheduleSettings {
+  enabled: boolean
+  /** Local time, "HH:MM". */
+  time: string
+  weekdaysOnly: boolean
+  /** Find new jobs and re-check postings before applying. */
+  findFirst: boolean
+  notify: boolean
+  /** Local date (YYYY-MM-DD) of the last daily run. */
+  lastRun: string | null
+  nextRun: string | null
+  running: boolean
+  step: string | null
+}
+
+export interface NeedsYouItem {
+  jobId: string
+  company: string
+  role: string
+  url: string
+  status: Status
+  reason: string
+}
+
+export interface Dashboard {
+  today: { applied: number; cap: number; ready: number }
+  agent: AgentProgress
+  schedule: ScheduleSettings
+  needsYou: NeedsYouItem[]
+  recent: Pick<AgentRun, 'id' | 'company' | 'role' | 'outcome' | 'mode' | 'startedAt'>[]
+  next: Pick<Job, 'id' | 'company' | 'role' | 'priority'>[]
+}
+
 export interface Summary {
   jobs: number
   byPriority: Record<string, number>
   byMode: Record<string, number>
   byStatus: Record<string, number>
   byLive: Record<string, number>
+  byArea: Record<string, number>
   setup: { answered: number; required: number; missing: string[] }
   resume: ResumeInfo
   llm: LlmStatus

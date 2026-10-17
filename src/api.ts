@@ -1,4 +1,7 @@
 import type {
+  AgentProgress,
+  Dashboard,
+  AgentRun,
   Answer,
   DiscoverProgress,
   DiscoverSettings,
@@ -7,6 +10,7 @@ import type {
   Question,
   PageLink,
   ResumeInfo,
+  ScheduleSettings,
   SavedPage,
   Summary,
   VerifyProgress,
@@ -37,11 +41,12 @@ export interface Settings {
 
 export const api = {
   summary: () => request<Summary>('/summary'),
+  dashboard: () => request<Dashboard>('/dashboard'),
   jobs: () => request<Job[]>('/jobs'),
   job: (id: string) => request<JobDetail>(`/jobs/${id}`),
   patchJob: (
     id: string,
-    patch: Partial<Pick<Job, 'priority' | 'notes'>> & { status?: 'applied' | 'not_started'; removed?: boolean },
+    patch: Partial<Pick<Job, 'priority' | 'notes' | 'area'>> & { status?: 'applied' | 'not_started'; removed?: boolean },
   ) =>
     request<Job>(`/jobs/${id}`, 'PATCH', patch),
   removeJobs: (ids: string[]) => request<{ removed: number }>('/jobs/remove', 'POST', { ids }),
@@ -53,6 +58,15 @@ export const api = {
   checkAllPages: () => request<SavedPage[]>('/pages/check', 'POST'),
   markPageSeen: (id: number) => request<SavedPage>(`/pages/${id}/seen`, 'POST'),
   addLinkAsJob: (id: number, link: PageLink) => request<{ id: string; added: boolean }>(`/pages/${id}/add-job`, 'POST', link),
+  agent: () =>
+    request<{ progress: AgentProgress; runs: AgentRun[]; today: { applied: number; cap: number; ready: number } }>('/agent'),
+  startLive: () => request<AgentProgress>('/agent/live', 'POST', {}),
+  stopAgent: () => request<AgentProgress>('/agent/stop', 'POST'),
+  schedule: () => request<ScheduleSettings>('/schedule'),
+  saveSchedule: (patch: Partial<ScheduleSettings>) => request<ScheduleSettings>('/schedule', 'PUT', patch),
+  testNotify: () => request<{ shown: boolean }>('/notify/test', 'POST'),
+  setDailyCap: (dailyCap: number) => request<{ cap: number }>('/agent/settings', 'PUT', { dailyCap }),
+  startDryRun: (limit = 10) => request<AgentProgress>('/agent/dry-run', 'POST', { limit }),
   questions: () =>
     request<{ questions: Question[]; sectionNotes: Record<string, string>; answers: Answer[] }>('/questions'),
   saveAnswer: (key: string, value: string) => request<{ setup: Summary['setup'] }>(`/answers/${key}`, 'PUT', { value }),

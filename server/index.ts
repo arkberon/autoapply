@@ -6,13 +6,29 @@ import path from 'node:path'
 import { z } from 'zod'
 import { APP_DIR, db, getSetting, logEvent, now, setSetting } from './db.ts'
 import { addBoard, discoverProgress, discoverSettings, DISCOVER_DEFAULTS, parseBoardUrl, startDiscover, watchedBoards } from './discover.ts'
+import { classifyPending } from './areas.ts'
 import { runImport } from './import.ts'
+import { notify } from './notify.ts'
+import { saveScheduleSettings, scheduleSettings, startScheduler } from './schedule.ts'
+import {
+  agentProgress,
+  appliedToday,
+  dailyCap,
+  listRuns,
+  pickLiveJobs,
+  readyForLive,
+  runReceipt,
+  runScreenshot,
+  startDryRun,
+  startLive,
+  stopAgent,
+} from './agent/run.ts'
 import { addLinkAsJob, addPage, checkAllPages, checkPage, deletePage, listPages, markSeen, updatePage } from './links.ts'
 import { DEFAULT_LLM_BASE_URL, llmConfig, testLlm } from './llm.ts'
 import { QUESTIONS, SECTION_NOTES } from './questions.ts'
 import { docIdFromUrl, resumeInfo, syncResume } from './resume.ts'
 import { startVerify, verifyProgress } from './verify.ts'
-import type { Answer, Job, LlmStatus, Summary } from '../shared/types.ts'
+import { WORK_AREAS, type Answer, type Dashboard, type Job, type LlmStatus, type NeedsYouItem, type Summary } from '../shared/types.ts'
 
 process.chdir(APP_DIR)
 
@@ -20,7 +36,7 @@ const app = new Hono()
 
 const JOB_COLUMNS = `id, company, role, market, location, url, ats, mode, org, posting_id, fit, difficulty,
   priority, priority_reason, priority_locked, salary_low, salary_high, status, live, live_note, live_checked_at,
-  last_checked, applied_at, dup_of, hold, notes, removed, discovered_at,
+  last_checked, applied_at, dup_of, hold, notes, removed, discovered_at, area, area_source,
   (SELECT COUNT(*) FROM drafts d WHERE d.job_id = jobs.id) AS draft_count`
 
 // Jobs with nothing left to do sink to the bottom. Within a priority level, the
@@ -64,6 +80,7 @@ app.get('/api/summary', (c) => {
     byMode: counts('mode'),
     byStatus: counts('status'),
     byLive: counts('live'),
+    byArea: counts("COALESCE(area, 'Other')"),
     setup: setupProgress(),
     resume: resumeInfo(),
     llm: llmStatus,
@@ -101,6 +118,7 @@ const jobPatch = z.object({
   status: z.enum(['applied', 'not_started']).optional(),
   removed: z.boolean().optional(),
   notes: z.string().max(4000).optional(),
+  area: z.enum(WORK_AREAS).optional(),
 })
 
 app.patch('/api/jobs/:id', async (c) => {
@@ -109,7 +127,8 @@ app.patch('/api/jobs/:id', async (c) => {
   if (!patch.success) return c.json({ error: 'Invalid change' }, 400)
   if (!db.prepare('SELECT 1 FROM jobs WHERE id = ?').get(id)) return c.json({ error: 'Job not found' }, 404)
 
-  const { priority, status, notes, removed } = patch.data
+  const { priority, status, notes, removed, area } = patch.data
+  if (area !== undefined) db.prepare("UPDATE jobs SET area = ?, area_source = 'you', area_locked = 1 WHERE id = ?").run(area, id)
   if (priority !== undefined) {
     db.prepare("UPDATE jobs SET priority = ?, priority_locked = 1, priority_reason = 'Set by you' WHERE id = ?").run(priority, id)
   }
@@ -187,6 +206,102 @@ app.post('/api/pages/:id/add-job', async (c) => {
   }
 })
 
+// ── Application agent
+
+app.get('/api/agent', (c) =>
+  c.json({
+    progress: agentProgress(),
+    runs: listRuns(),
+    today: { applied: appliedToday(), cap: dailyCap(), ready: readyForLive() },
+  }),
+)
+
+// Submits real applications. Only ever started by the user from the Activity tab.
+app.post('/api/agent/live', async (c) => {
+  const body = z.object({ limit: z.number().int().min(1).max(100).optional() }).safeParse(await c.req.json().catch(() => ({})))
+  return c.json(startLive(body.success ? body.data.limit : undefined))
+})
+
+app.post('/api/agent/stop', (c) => c.json(stopAgent()))
+
+app.put('/api/agent/settings', async (c) => {
+  const body = z.object({ dailyCap: z.number().int().min(1).max(100) }).safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'The daily limit must be between 1 and 100' }, 400)
+  setSetting('daily_cap', String(body.data.dailyCap))
+  return c.json({ cap: dailyCap() })
+})
+
+app.get('/api/schedule', (c) => c.json(scheduleSettings()))
+
+// Everything the Dashboard shows that is not in the summary.
+app.get('/api/dashboard', (c) => {
+  const needsYou = db
+    .prepare<[], NeedsYouItem & { reasons: string | null }>(`
+      SELECT jobs.id AS jobId, jobs.company, jobs.role, jobs.url, jobs.status,
+        (SELECT reasons FROM runs WHERE runs.job_id = jobs.id AND runs.mode = 'live' ORDER BY runs.id DESC LIMIT 1) AS reasons
+      FROM jobs
+      WHERE jobs.status IN ('needs_you', 'uncertain', 'failed') AND jobs.removed = 0
+      ORDER BY jobs.priority, jobs.company
+      LIMIT 20
+    `)
+    .all()
+    .map(({ reasons, ...item }) => ({
+      ...item,
+      reason:
+        (JSON.parse(reasons ?? '[]') as string[])[0] ??
+        (item.status === 'uncertain' ? 'Submit was pressed but no confirmation appeared' : 'Needs an answer'),
+    }))
+  const dashboard: Dashboard = {
+    today: { applied: appliedToday(), cap: dailyCap(), ready: readyForLive() },
+    agent: agentProgress(),
+    schedule: scheduleSettings(),
+    needsYou,
+    recent: listRuns(6).map(({ id, company, role, outcome, mode, startedAt }) => ({ id, company, role, outcome, mode, startedAt })),
+    next: pickLiveJobs(4).map(({ id, company, role, priority }) => ({ id, company, role, priority })),
+  }
+  return c.json(dashboard)
+})
+
+app.put('/api/schedule', async (c) => {
+  const body = z
+    .object({
+      enabled: z.boolean(),
+      time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+      weekdaysOnly: z.boolean(),
+      findFirst: z.boolean(),
+      notify: z.boolean(),
+    })
+    .partial()
+    .safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'Invalid schedule' }, 400)
+  return c.json(saveScheduleSettings(body.data))
+})
+
+app.post('/api/notify/test', async (c) => {
+  const shown = await notify('Auto Apply', 'Notifications are working. You will get one after every run.')
+  return c.json({ shown })
+})
+
+app.get('/api/agent/runs/:id/receipt', (c) => {
+  const file = runReceipt(Number(c.req.param('id')))
+  if (!file) return c.json({ error: 'No receipt' }, 404)
+  return c.body(fs.readFileSync(file), 200, { 'content-type': 'application/json' })
+})
+
+app.post('/api/agent/dry-run', async (c) => {
+  const body = z
+    .object({ limit: z.number().int().min(1).max(30).default(10), jobIds: z.array(z.string().max(200)).max(30).default([]) })
+    .safeParse(await c.req.json().catch(() => ({})))
+  if (!body.success) return c.json({ error: 'Invalid request' }, 400)
+  return c.json(startDryRun(body.data.limit, body.data.jobIds))
+})
+
+app.get('/api/agent/runs/:id/screenshot', (c) => {
+  const file = runScreenshot(Number(c.req.param('id')))
+  if (!file) return c.json({ error: 'No screenshot' }, 404)
+  return c.body(fs.readFileSync(file), 200, { 'content-type': 'image/png' })
+})
+
 app.get('/api/questions', (c) => {
   const answers = db.prepare<[], Answer>('SELECT key, value, source, updated_at FROM answers').all()
   return c.json({ questions: QUESTIONS, sectionNotes: SECTION_NOTES, answers })
@@ -207,7 +322,11 @@ app.put('/api/answers/:key', async (c) => {
   return c.json({ setup: setupProgress() })
 })
 
-app.post('/api/import', (c) => c.json(runImport()))
+app.post('/api/import', (c) => {
+  const result = runImport()
+  void classifyPending()
+  return c.json(result)
+})
 
 app.get('/api/verify', (c) => c.json(verifyProgress()))
 app.post('/api/verify', (c) => c.json(startVerify()))
@@ -297,6 +416,9 @@ if (db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM jobs').get()!.n ===
   console.log(`Imported ${result.jobs} jobs from the job sheet.`)
 }
 void syncResume()
+startScheduler()
+// Sort any job that has no work area yet, including everything already on the list.
+void classifyPending()
 void refreshLlm()
 
 const port = Number(process.env.PORT ?? 4310)

@@ -1,3 +1,4 @@
+import { classifyPending } from './areas.ts'
 import { db, getSetting, logEvent, now, setSetting } from './db.ts'
 import type { DiscoverProgress, DiscoverSettings, Priority } from '../shared/types.ts'
 
@@ -52,6 +53,13 @@ export const REGIONS: { market: string; cities: string[] }[] = [
       'burbank', 'pasadena', 'santa clarita', 'thousand oaks', 'westlake village',
     ],
   },
+  {
+    market: 'San Diego',
+    cities: [
+      'san diego', 'la jolla', 'sorrento valley', 'carlsbad', 'del mar', 'encinitas', 'oceanside', 'escondido',
+      'poway', 'rancho bernardo', 'chula vista', 'san marcos',
+    ],
+  },
   { market: 'Miami', cities: ['miami', 'fort lauderdale'] },
 ]
 
@@ -62,10 +70,25 @@ const REGION_PLACES = new RegExp(
 
 export const DISCOVER_DEFAULTS: DiscoverSettings = {
   // Role words only. Seniority words such as "new grad" raise priority instead of deciding a match.
-  include:
-    'software engineer, software developer, web developer, full stack, full-stack, frontend, front-end, front end, backend, back-end, back end, web engineer, mobile engineer, ios engineer, android engineer, product engineer, support engineer, solutions engineer, implementation, technical support, it support, help desk, qa engineer, qa analyst, sdet, software test, automation engineer',
-  exclude:
-    'senior, sr, sr., staff, principal, lead, manager, director, head of, vp, architect, intern, internship, ii, iii, iv, phd, clearance, hardware, electrical, mechanical, rf, manufacturing, sales',
+  // Entry-level software and IT roles.
+  include: [
+    // Software
+    'software engineer', 'software developer', 'web developer', 'application developer', 'full stack', 'full-stack',
+    'frontend', 'front-end', 'front end', 'backend', 'back-end', 'back end', 'web engineer', 'mobile engineer',
+    'ios engineer', 'ios developer', 'android engineer', 'android developer', 'product engineer', 'qa engineer',
+    'qa analyst', 'sdet', 'software test', 'test automation',
+    // IT
+    'it support', 'it specialist', 'it technician', 'it analyst', 'it associate', 'it administrator', 'it operations',
+    'it help desk', 'help desk', 'helpdesk', 'service desk', 'desktop support', 'technical support', 'support engineer',
+    'support technician', 'systems administrator', 'system administrator', 'sysadmin', 'network technician',
+    'network administrator', 'noc technician', 'noc analyst',
+  ].join(', '),
+  // Anything above entry level, plus internships, since you have graduated.
+  exclude: [
+    'senior', 'sr', 'sr.', 'intermediate', 'mid-level', 'mid level', 'staff', 'principal', 'lead', 'manager', 'director', 'head of', 'vp', 'architect', 'ii',
+    'iii', 'iv', 'phd', 'intern', 'internship', 'co-op', 'clearance', 'hardware', 'electrical', 'mechanical', 'rf',
+    'manufacturing', 'sales',
+  ].join(', '),
   locations: [...REGIONS.flatMap((r) => r.cities), 'remote'].join(', '),
   maxAgeDays: 45,
 }
@@ -337,6 +360,8 @@ export function startDiscover(): DiscoverProgress {
   }
 
   Promise.all(Array.from({ length: 6 }, worker)).finally(() => {
+    // New finds get their work area straight away.
+    void classifyPending()
     const at = now()
     Object.assign(progress, { running: false, finishedAt: at, lastAdded: progress.added })
     setSetting('discover_last_run', at)
