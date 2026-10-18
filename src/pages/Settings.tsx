@@ -195,8 +195,13 @@ export function Settings({ refresh }: { refresh: () => void }) {
             Also search public new-grad job lists (SimplifyJobs, updated daily; thousands of companies)
           </label>
           <label className="check">
+            <input type="checkbox" checked={search.allUsCities} onChange={(e) => setSearch({ ...search, allUsCities: e.target.checked })} />
+            Search every US city (narrow it down with the City and State filters on the Jobs tab)
+          </label>
+          <label className="check">
             <input
               type="checkbox"
+              disabled={search.allUsCities}
               checked={search.anyCityNewGradSwe}
               onChange={(e) => setSearch({ ...search, anyCityNewGradSwe: e.target.checked })}
             />

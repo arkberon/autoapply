@@ -11,7 +11,7 @@ import {
   type WorkArea,
   WORK_AREAS,
 } from '../../shared/types.ts'
-import { CITY_OPTIONS, regionsOf } from '../../shared/regions.ts'
+import { isRemote, placeLabel, placesOf, REGION_STATE, REGIONS, regionsOf, US_STATES } from '../../shared/regions.ts'
 import { api, isStale, postedAgo, timeAgo, type JobDetail } from '../api.ts'
 import { Cleanup } from './Cleanup.tsx'
 
@@ -138,12 +138,27 @@ function Detail({ job, onChange }: { job: Job; onChange: (job: Job) => void }) {
   )
 }
 
+const REMOTE_KEY = 'remote'
+const UNKNOWN_KEY = 'unknown'
+const SPECIAL_STATES: Record<string, string> = { [REMOTE_KEY]: 'Remote (US)', [UNKNOWN_KEY]: 'Location not stated' }
+
+/** "California (359)", most jobs first, with remote roles as their own option. */
+function stateOptions(list: Job[], where: Map<string, { states: Set<string> }>) {
+  const counts = new Map<string, number>()
+  for (const j of list) for (const s of where.get(j.id)!.states) counts.set(s, (counts.get(s) ?? 0) + 1)
+  return [...counts]
+    .map(([key, n]) => ({ key, n, label: SPECIAL_STATES[key] ?? US_STATES[key] }))
+    .sort((a, b) => b.n - a.n || a.label.localeCompare(b.label))
+}
+
 export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boolean; refresh: () => void }) {
   const [jobs, setJobs] = useState<Job[]>([])
   const [priority, setPriority] = useState<Priority | 0>(0)
   const [mode, setMode] = useState<Mode | ''>('')
   const [area, setArea] = useState<WorkArea | ''>('')
+  // City is "area:<market>" for a searched region (SF Bay Area) or "city:Austin, TX".
   const [city, setCity] = useState('')
+  const [state, setState] = useState('')
   const [search, setSearch] = useState('')
   const [view, setView] = useState<View>('todo')
   const [hideClosed, setHideClosed] = useState(false)
@@ -170,6 +185,32 @@ export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boole
 
   const replace = (next: Job) => setJobs((all) => all.map((j) => (j.id === next.id ? next : j)))
 
+  // Where each job is, worked out once per load: its states, cities and searched regions.
+  const where = useMemo(() => {
+    const map = new Map<string, { states: Set<string>; cities: Set<string>; regions: string[]; label: string }>()
+    for (const j of jobs) {
+      const places = placesOf(j.market, j.location)
+      const states = new Set(places.map((p) => p.state))
+      if (isRemote(j.market, j.location)) states.add(REMOTE_KEY)
+      if (!states.size) states.add(UNKNOWN_KEY)
+      map.set(j.id, {
+        states,
+        cities: new Set(places.filter((p) => p.city).map(placeLabel)),
+        regions: regionsOf(j.market, j.location),
+        // Jobs outside the searched regions show their own city: "Austin, TX +2".
+        label:
+          j.market === 'Other US' && places.length
+            ? `${placeLabel(places[0])}${places.length > 1 ? ` +${places.length - 1}` : ''}`
+            : j.market,
+      })
+    }
+    return map
+  }, [jobs])
+
+  const inState = (j: Job) => !state || where.get(j.id)!.states.has(state)
+  const inCity = (j: Job, c = city) =>
+    !c || (c.startsWith('area:') ? where.get(j.id)!.regions.includes(c.slice(5)) : where.get(j.id)!.cities.has(c.slice(5)))
+
   const inView = (j: Job, v: View) =>
     v === 'removed' ? j.removed === 1 : j.removed === 0 && (v === 'applied') === (j.status === 'applied')
 
@@ -182,13 +223,14 @@ export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boole
         (!priority || j.priority === priority) &&
         (!mode || j.mode === mode) &&
         (!area || (j.area ?? 'Other') === area) &&
-        (!city || regionsOf(j.market, j.location).includes(city)) &&
+        inState(j) &&
+        inCity(j) &&
         (!hideClosed || j.live !== 'closed') &&
-        (!term || `${j.company} ${j.role} ${j.market} ${j.ats}`.toLowerCase().includes(term)),
+        (!term || `${j.company} ${j.role} ${where.get(j.id)!.label} ${j.ats}`.toLowerCase().includes(term)),
     )
     // Most recent applications first.
     return view === 'applied' ? list.sort((a, b) => (b.applied_at ?? '').localeCompare(a.applied_at ?? '')) : list
-  }, [jobs, view, priority, mode, area, city, search, hideClosed, onlyFound])
+  }, [jobs, view, priority, mode, area, city, state, where, search, hideClosed, onlyFound])
 
   const viewCount = (v: View) => jobs.filter((j) => inView(j, v)).length
   const current = jobs.filter((j) => inView(j, view))
@@ -230,7 +272,7 @@ export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boole
                   return (
                     <span key={i}>
                       <strong>{name}:</strong> {r.checked.toLocaleString()} postings checked · <strong>{r.added} new</strong> ·{' '}
-                      {r.known} already on your list · {r.otherPlaces} outside your cities · {r.otherTitles} other kinds of roles ·{' '}
+                      {r.known} already on your list · {r.otherPlaces} {discover.report!.allUs ? 'outside the US' : 'outside your cities'} · {r.otherTitles} other kinds of roles ·{' '}
                       {r.tooOld} too old
                     </span>
                   )
@@ -291,15 +333,54 @@ export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boole
             </button>
           )}
         </div>
+        <select
+          value={state}
+          onChange={(e) => {
+            setState(e.target.value)
+            setCity('')
+          }}
+          aria-label="State"
+        >
+          <option value="">Every state</option>
+          {stateOptions(current, where).map((o) => (
+            <option key={o.key} value={o.key}>
+              {o.label} ({o.n})
+            </option>
+          ))}
+        </select>
         <select value={city} onChange={(e) => setCity(e.target.value)} aria-label="City">
-          <option value="">Every city</option>
-          {CITY_OPTIONS.map((c) => ({ ...c, n: current.filter((j) => regionsOf(j.market, j.location).includes(c.key)).length }))
-            .filter((c) => c.n > 0)
-            .map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.label} ({c.n})
-              </option>
-            ))}
+          <option value="">{state ? `Every city in ${SPECIAL_STATES[state] ?? US_STATES[state]}` : 'Every city'}</option>
+          {(() => {
+            const inScope = current.filter(inState)
+            const areas = REGIONS.filter((r) => !state || REGION_STATE[r.market] === state)
+              .map((r) => ({ key: `area:${r.market}`, label: r.label, n: inScope.filter((j) => inCity(j, `area:${r.market}`)).length }))
+              .filter((o) => o.n > 0)
+            const counts = new Map<string, number>()
+            for (const j of inScope) for (const c of where.get(j.id)!.cities) if (!state || c.endsWith(`, ${state}`)) counts.set(c, (counts.get(c) ?? 0) + 1)
+            const cities = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+            return (
+              <>
+                {areas.length > 0 && (
+                  <optgroup label="Areas">
+                    {areas.map((o) => (
+                      <option key={o.key} value={o.key}>
+                        {o.label} ({o.n})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {cities.length > 0 && (
+                  <optgroup label="Cities">
+                    {cities.map(([c, n]) => (
+                      <option key={c} value={`city:${c}`}>
+                        {c} ({n})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </>
+            )
+          })()}
         </select>
         <select value={area} onChange={(e) => setArea(e.target.value as WorkArea | '')} aria-label="Work area">
           <option value="">Every work area</option>
@@ -367,7 +448,7 @@ export function Jobs({ summary, busy, refresh }: { summary: Summary; busy: boole
                     {job.discovered_at && <span className="tag ok">New {timeAgo(job.discovered_at)}</span>}
                     <span className="role">{job.role}</span>
                     <span className="muted small">
-                      {job.market}
+                      {where.get(job.id)?.label ?? job.market}
                       {job.area && <span className="area-tag">{job.area}</span>}
                       <span className={isStale(job.posted_at) ? 'posted stale' : 'posted'}>
                         {job.posted_at ? `Posted ${postedAgo(job.posted_at)}` : 'Posting date unknown'}
