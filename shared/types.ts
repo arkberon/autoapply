@@ -150,6 +150,8 @@ export interface DiscoverSourceReport {
 export interface DiscoverReport {
   boards: DiscoverSourceReport
   lists: DiscoverSourceReport
+  /** The search took every US city, so otherPlaces counts postings outside the US. */
+  allUs?: boolean
 }
 
 export interface DiscoverSettings {
@@ -164,6 +166,8 @@ export interface DiscoverSettings {
   useLists: boolean
   /** Accept any US city for entry-level software engineer roles; every other role must be in one of the places above. */
   anyCityNewGradSwe: boolean
+  /** Accept every role in any US city; the Jobs tab's City and State filters narrow it down. */
+  allUsCities: boolean
 }
 
 export interface PageLink {

@@ -61,11 +61,12 @@ export const DISCOVER_DEFAULTS: DiscoverSettings = {
   maxAgeDays: 45,
   useLists: true,
   anyCityNewGradSwe: true,
+  allUsCities: true,
 }
 
 // "Remote" alone is accepted, but not when the posting names a country outside the US.
 const NON_US =
-  /\b(uk|united kingdom|england|london|canada|toronto|vancouver|montreal|europe|emea|germany|berlin|munich|france|paris|spain|madrid|barcelona|portugal|lisbon|italy|milan|switzerland|zurich|austria|vienna|sweden|stockholm|denmark|copenhagen|norway|finland|netherlands|amsterdam|belgium|ireland|dublin|poland|warsaw|krakow|czech|prague|hungary|romania|bucharest|serbia|belgrade|ukraine|greece|turkey|istanbul|israel|tel aviv|egypt|nigeria|kenya|south africa|india|bangalore|bengaluru|hyderabad|pune|chennai|mumbai|delhi|noida|gurugram|gurgaon|jaipur|pakistan|philippines|manila|vietnam|china|shanghai|hong kong|taiwan|korea|seoul|japan|tokyo|singapore|australia|sydney|melbourne|new zealand|apac|latam|south america|brazil|sao paulo|mexico|argentina|buenos aires|colombia|bogota|chile|peru|uruguay|costa rica)\b/i
+  /\b(uk|united kingdom|england|london|canada|toronto|vancouver|montreal|europe|emea|germany|berlin|munich|france|paris|spain|madrid|barcelona|portugal|lisbon|italy|milan|switzerland|zurich|austria|vienna|sweden|stockholm|denmark|copenhagen|norway|finland|netherlands|amsterdam|belgium|ireland|dublin|poland|warsaw|krakow|czech|prague|hungary|romania|bucharest|serbia|belgrade|ukraine|greece|turkey|istanbul|israel|tel aviv|egypt|nigeria|kenya|south africa|india|bangalore|bengaluru|hyderabad|pune|chennai|mumbai|delhi|noida|gurugram|gurgaon|jaipur|pakistan|philippines|manila|vietnam|china|shanghai|hong kong|taiwan|korea|seoul|japan|tokyo|singapore|australia|sydney|melbourne|new zealand|apac|latam|south america|brazil|sao paulo|mexico|argentina|buenos aires|colombia|bogota|chile|peru|uruguay|costa rica|slovakia|bratislava|slovenia|ljubljana|croatia|zagreb|bulgaria|sofia|estonia|tallinn|latvia|riga|lithuania|vilnius|kyiv|kiev|lviv|luxembourg|scotland|edinburgh|glasgow|wales|cardiff|manchester|cambridge, uk|uae|united arab emirates|dubai|abu dhabi|qatar|doha|saudi|riyadh|jeddah|bahrain|kuwait|oman|jordan|amman|lebanon|morocco|tunisia|ghana|accra|lagos|nairobi|indonesia|jakarta|malaysia|kuala lumpur|thailand|bangkok|sri lanka|bangladesh|dhaka|nepal|ho chi minh|hanoi|beijing|shenzhen|guangzhou|hangzhou|taipei|osaka|busan|auckland|wellington|brisbane|perth|toronto|vancouver)\b/i
 
 // Software engineering titles, for the any-city rule (IT and support roles still need one of your places).
 const SWE =
@@ -77,8 +78,15 @@ const US_PLACE = new RegExp(
   `,\\s*(${US_STATES})\\b|\\b(united states|usa|u\\.s\\.|nyc|sf|alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming)\\b`,
   'i',
 )
+// Canadian provinces are written like states ("Waterloo, ON"), so they are checked in capitals only.
+const CANADA = /,\s*(ON|BC|QC|AB|MB|NS|NB|NL|PE|SK)\b|\b(waterloo|ottawa|calgary|edmonton|mississauga|kitchener|quebec|winnipeg|halifax)\b/
 const inUS = (location: string): boolean =>
-  US_PLACE.test(location) || (/remote/i.test(location) && !NON_US.test(location))
+  US_PLACE.test(location) || (/remote/i.test(location) && !NON_US.test(location) && !CANADA.test(location))
+/** For the every-US-city search: anything that names the US, or names no foreign place at all. */
+// Some boards write the country as a code after a semicolon: "Bratislava; SK", "Kyiv; UA".
+const COUNTRY_CODE = new RegExp(`;\\s*(?!(?:${US_STATES})\\b)[A-Z]{2}\\s*$`)
+const notAbroad = (location: string): boolean =>
+  US_PLACE.test(location) || (!NON_US.test(location) && !CANADA.test(location) && !COUNTRY_CODE.test(location))
 
 const ENTRY_LEVEL = /\b(new grad|graduate|junior|jr\.?|entry[- ]level|early career|associate|engineer i|developer i|level 1|i)\b(?!\w)/i
 
@@ -90,6 +98,7 @@ export function discoverSettings(): DiscoverSettings {
     maxAgeDays: Number(getSetting('discover_max_age_days', String(DISCOVER_DEFAULTS.maxAgeDays))) || DISCOVER_DEFAULTS.maxAgeDays,
     useLists: getSetting('discover_use_lists', '1') === '1',
     anyCityNewGradSwe: getSetting('discover_any_city_new_grad_swe', '1') === '1',
+    allUsCities: getSetting('discover_all_us_cities', '1') === '1',
   }
 }
 
@@ -350,7 +359,11 @@ export function startDiscover(): DiscoverProgress {
   Object.assign(progress, { running: true, done: 0, total: boards.length + lists.length, added: 0, failed: 0 })
   // What each source looked at and why postings were not added, so "0 new" explains itself.
   const blank = () => ({ checked: 0, added: 0, known: 0, otherTitles: 0, otherPlaces: 0, tooOld: 0 })
-  const report: DiscoverReport = { boards: { sources: boards.length, ...blank() }, lists: { sources: lists.length, ...blank() } }
+  const report: DiscoverReport = {
+    boards: { sources: boards.length, ...blank() },
+    lists: { sources: lists.length, ...blank() },
+    allUs: settings.allUsCities,
+  }
 
   const known = db.prepare<[string, string, string], { id: string }>(
     'SELECT id FROM jobs WHERE ats = ? AND org = ? AND posting_id = ?',
@@ -370,6 +383,8 @@ export function startDiscover(): DiscoverProgress {
    */
   const fitsFilters = (p: Pick<Posting, 'title' | 'location'>, newGrad = ENTRY_LEVEL.test(p.title), realTitle = p.title): boolean => {
     if (!include?.test(p.title) || exclude?.test(p.title)) return false
+    // Every US city: the Jobs tab's City and State filters narrow it down later.
+    if (settings.allUsCities) return notAbroad(p.location)
     // Entry-level software engineer roles are worth any US city; everything else must be in your places.
     // The title itself must say software: lists file some unrelated jobs under "Software".
     if (settings.anyCityNewGradSwe && newGrad && SWE.test(realTitle) && !exclude?.test(realTitle) && inUS(p.location)) return true
