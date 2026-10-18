@@ -14,6 +14,7 @@ import {
 import { isRemote, placeLabel, placesOf, REGION_STATE, REGIONS, regionsOf, US_STATES } from '../../shared/regions.ts'
 import { api, isStale, postedAgo, timeAgo, type JobDetail } from '../api.ts'
 import { Cleanup } from './Cleanup.tsx'
+import { OpenFormButton } from './OpenForm.tsx'
 
 const PRIORITIES: Priority[] = [1, 2, 3, 4]
 const MODES: Mode[] = ['auto', 'review', 'assist', 'manual', 'email']
@@ -121,6 +122,7 @@ function Detail({ job, onChange }: { job: Job; onChange: (job: Job) => void }) {
         <a className="button" href={job.url} target="_blank" rel="noreferrer">
           {job.mode === 'email' ? 'Open email' : 'Open posting'}
         </a>
+        {job.mode !== 'email' && job.status !== 'applied' && <OpenFormButton jobId={job.id} url={job.url} label="Fill form for me" />}
         {job.status === 'applied' ? (
           <button onClick={() => setStatus('not_started')}>Undo "applied"</button>
         ) : (

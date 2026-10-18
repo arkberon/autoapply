@@ -87,7 +87,8 @@ export interface RunResult {
 }
 
 export interface RunOptions {
-  mode: 'dry' | 'live'
+  /** review: fill the form in a visible window and leave it open for you to check and submit. */
+  mode: 'dry' | 'live' | 'review'
   /** Called right before submit; returning false cancels it. Marks the job as submitting. */
   beforeSubmit?: () => boolean
   confirmTimeoutMs?: number
@@ -100,7 +101,7 @@ export async function runJob(context: BrowserContext, job: Job, ctx: JobContext,
   const decisions: Decision[] = []
   const dir = path.join(RUNS_DIR, job.id)
   fs.mkdirSync(dir, { recursive: true })
-  const screenshot = path.join(dir, `${options.mode === 'dry' ? 'dry-run' : 'filled'}-${Date.now()}.png`)
+  const screenshot = path.join(dir, `${options.mode === 'live' ? 'filled' : `${options.mode === 'dry' ? 'dry-run' : 'review'}`}-${Date.now()}.png`)
   let pressed = false
 
   try {
@@ -163,7 +164,8 @@ export async function runJob(context: BrowserContext, job: Job, ctx: JobContext,
     }
 
     await page.screenshot({ path: screenshot, fullPage: true }).catch(() => undefined)
-    if (reasons.length || options.mode === 'dry') {
+    if (options.mode === 'review') await page.bringToFront().catch(() => undefined)
+    if (reasons.length || options.mode !== 'live') {
       return { outcome: reasons.length ? 'parked' : 'ready', reasons: [...new Set(reasons)], decisions, screenshot }
     }
 
@@ -195,8 +197,52 @@ export async function runJob(context: BrowserContext, job: Job, ctx: JobContext,
       screenshot: fs.existsSync(screenshot) ? screenshot : null,
     }
   } finally {
-    await page.close().catch(() => undefined)
+    // A review leaves the filled form open; you submit it yourself.
+    if (options.mode !== 'review') await page.close().catch(() => undefined)
   }
+}
+
+// ── Review: the form filled in a window you can see, left for you to check and submit
+
+// Its own browser profile, so an open review window never blocks a scheduled run.
+const REVIEW_PROFILE_DIR = path.join(DATA_DIR, 'browser-profile-review')
+let reviewContext: Promise<BrowserContext> | null = null
+
+/** The review window, opened on first use and reused (one tab per form) until you close it. */
+function reviewWindow(): Promise<BrowserContext> {
+  if (!reviewContext) {
+    reviewContext = (async () => {
+      fs.mkdirSync(REVIEW_PROFILE_DIR, { recursive: true })
+      const context = await chromium.launchPersistentContext(REVIEW_PROFILE_DIR, { channel: 'chrome', headless: false, viewport: null })
+      await context.addInitScript('globalThis.__name = (fn) => fn')
+      context.on('close', () => {
+        reviewContext = null
+      })
+      return context
+    })()
+    reviewContext.catch(() => {
+      reviewContext = null
+    })
+  }
+  return reviewContext
+}
+
+/** Opens a job's application in a visible window with every answer the agent knows filled in. Never submits. */
+export async function openFilledForm(jobId: string): Promise<{ outcome: AgentRun['outcome']; reasons: string[] }> {
+  const job = db.prepare<[string], Job>('SELECT * FROM jobs WHERE id = ?').get(jobId)
+  if (!job) throw new Error('No such job')
+  const resumePath = resumeInfo().pdf
+  if (!resumePath) throw new Error('No resume PDF yet; sync your resume in Setup first')
+  const drafts = db.prepare<[string], { label: string; value: string }>('SELECT label, value FROM drafts WHERE job_id = ?').all(job.id)
+  const context = await reviewWindow()
+  const result = await runJob(
+    context,
+    job,
+    { id: job.id, company: job.company, role: job.role, location: job.location || job.market, answers: loadAnswers(), drafts, resumePath },
+    { mode: 'review' },
+  )
+  logEvent(job.id, 'review', result.reasons.length ? result.reasons.join('; ') : 'Form filled; waiting for you to submit')
+  return { outcome: result.outcome, reasons: result.reasons }
 }
 
 // ── Batch control

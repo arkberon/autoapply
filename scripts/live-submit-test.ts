@@ -96,7 +96,7 @@ server.listen(PORT, '127.0.0.1', async () => {
   await context.addInitScript('globalThis.__name = (fn) => fn')
   let failures = 0
 
-  const run = async (name: string, mode: 'live' | 'dry') => {
+  const run = async (name: string, mode: 'live' | 'dry' | 'review') => {
     const job = { id: `zz_test_${name}_${mode}`, company: 'Example Co', role: 'Junior SWE', ats: 'Greenhouse', url: `${BASE}/${name}.html` } as Job
     let claims = 0
     const before = submits[name] ?? 0
@@ -124,6 +124,18 @@ server.listen(PORT, '127.0.0.1', async () => {
   const dryOk = dry.sent === 0 && dry.claims === 0 && dry.result.outcome === 'ready'
   if (!dryOk) failures++
   console.log(`${dryOk ? 'PASS' : 'FAIL'}  dry run  → ${dry.result.outcome} (expected ready) submitted ${dry.sent}×`)
+
+  // "Open filled form": filled, left open for you, never submitted.
+  const review = await run('success', 'review')
+  await new Promise((r) => setTimeout(r, 1500))
+  const left = context.pages().find((pg) => pg.url().endsWith('/success.html'))
+  const firstName = left ? await left.inputValue('#fn').catch(() => '') : ''
+  const reviewOk = review.sent === 0 && review.claims === 0 && review.result.outcome === 'ready' && firstName === 'Sam'
+  if (!reviewOk) failures++
+  console.log(
+    `${reviewOk ? 'PASS' : 'FAIL'}  review   → ${review.result.outcome} (expected ready) submitted ${review.sent}×, ` +
+      `form ${left ? `left open with First Name "${firstName}"` : 'was closed'}`,
+  )
 
   await context.close()
   fs.rmSync(work, { recursive: true, force: true })

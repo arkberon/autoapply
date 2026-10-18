@@ -3,6 +3,7 @@ import { PRIORITY_LABEL, type AgentRun, type Dashboard, type Priority, type Summ
 import { api, timeAgo } from '../api.ts'
 import type { Tab } from '../App.tsx'
 import { ShareCard } from './ShareCard.tsx'
+import { OpenFormButton } from './OpenForm.tsx'
 
 interface Props {
   summary: Summary
@@ -331,9 +332,7 @@ export function Home({ summary, go, refresh }: Props) {
                 <strong>{n.company}</strong>
                 <span className="muted small">{n.reason}</span>
               </div>
-              <a className="button" href={n.url} target="_blank" rel="noreferrer">
-                Open form
-              </a>
+              <OpenFormButton jobId={n.jobId} url={n.url} />
               {n.status !== 'uncertain' && (
                 <button onClick={() => act(`retry-${n.jobId}`, () => api.patchJob(n.jobId, { status: 'not_started' }))}>Try again</button>
               )}

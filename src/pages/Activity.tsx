@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { AgentProgress, AgentRun, ScheduleSettings } from '../../shared/types.ts'
 import { api, timeAgo } from '../api.ts'
 import { LiveRun } from './LiveRun.tsx'
+import { OpenFormButton } from './OpenForm.tsx'
 
 const OUTCOME: Record<AgentRun['outcome'], { label: string; tone: string }> = {
   running: { label: 'Working…', tone: '' },
@@ -150,9 +151,7 @@ function RunCard({ run, onRetry }: { run: AgentRun; onRetry: () => void }) {
               Screenshot
             </a>
           )}
-          <a className="button" href={run.url} target="_blank" rel="noreferrer">
-            Open form
-          </a>
+          {run.jobStatus !== 'applied' && <OpenFormButton jobId={run.jobId} url={run.url} />}
           {canRetry && <button onClick={retry}>Try again</button>}
         </div>
       </div>

@@ -968,6 +968,8 @@ td .small {
 
 .detail-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin: 14px 0 4px;
 }
@@ -1597,5 +1599,13 @@ button.ghost:hover {
 }
 
 .posted.stale {
+  color: var(--warn);
+}
+
+/* The result of "Open filled form", on its own line under the buttons. */
+.open-form-note {
+  flex-basis: 100%;
+}
+.open-form-note.warn {
   color: var(--warn);
 }
