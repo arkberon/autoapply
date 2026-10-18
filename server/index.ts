@@ -16,6 +16,7 @@ import {
   appliedToday,
   dailyCap,
   listRuns,
+  openFilledForm,
   pickLiveJobs,
   readyForLive,
   runReceipt,
@@ -287,6 +288,15 @@ app.get('/api/agent/runs/:id/receipt', (c) => {
   const file = runReceipt(Number(c.req.param('id')))
   if (!file) return c.json({ error: 'No receipt' }, 404)
   return c.body(fs.readFileSync(file), 200, { 'content-type': 'application/json' })
+})
+
+// Fills a job's form in a visible window and leaves it open for you to check and submit.
+app.post('/api/agent/open/:jobId', async (c) => {
+  try {
+    return c.json(await openFilledForm(c.req.param('jobId')))
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message.split('\n')[0] : String(err) }, 500)
+  }
 })
 
 app.post('/api/agent/dry-run', async (c) => {

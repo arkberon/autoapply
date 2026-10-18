@@ -66,6 +66,8 @@ export const api = {
   saveSchedule: (patch: Partial<ScheduleSettings>) => request<ScheduleSettings>('/schedule', 'PUT', patch),
   testNotify: () => request<{ shown: boolean }>('/notify/test', 'POST'),
   setDailyCap: (dailyCap: number) => request<{ cap: number }>('/agent/settings', 'PUT', { dailyCap }),
+  openForm: (jobId: string) =>
+    request<{ outcome: AgentRun['outcome']; reasons: string[] }>(`/agent/open/${encodeURIComponent(jobId)}`, 'POST'),
   startDryRun: (limit = 10) => request<AgentProgress>('/agent/dry-run', 'POST', { limit }),
   questions: () =>
     request<{ questions: Question[]; sectionNotes: Record<string, string>; answers: Answer[] }>('/questions'),
