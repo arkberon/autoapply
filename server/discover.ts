@@ -60,11 +60,25 @@ export const DISCOVER_DEFAULTS: DiscoverSettings = {
   locations: [...REGIONS.flatMap((r) => r.cities), 'remote'].join(', '),
   maxAgeDays: 45,
   useLists: true,
+  anyCityNewGradSwe: true,
 }
 
 // "Remote" alone is accepted, but not when the posting names a country outside the US.
 const NON_US =
   /\b(uk|united kingdom|england|london|canada|toronto|vancouver|montreal|europe|emea|germany|berlin|munich|france|paris|spain|madrid|barcelona|portugal|lisbon|italy|milan|switzerland|zurich|austria|vienna|sweden|stockholm|denmark|copenhagen|norway|finland|netherlands|amsterdam|belgium|ireland|dublin|poland|warsaw|krakow|czech|prague|hungary|romania|bucharest|serbia|belgrade|ukraine|greece|turkey|istanbul|israel|tel aviv|egypt|nigeria|kenya|south africa|india|bangalore|bengaluru|hyderabad|pune|chennai|mumbai|delhi|noida|gurugram|gurgaon|jaipur|pakistan|philippines|manila|vietnam|china|shanghai|hong kong|taiwan|korea|seoul|japan|tokyo|singapore|australia|sydney|melbourne|new zealand|apac|latam|south america|brazil|sao paulo|mexico|argentina|buenos aires|colombia|bogota|chile|peru|uruguay|costa rica)\b/i
+
+// Software engineering titles, for the any-city rule (IT and support roles still need one of your places).
+const SWE =
+  /\b(software|developer|programmer|swe|sde|sdet|full[- ]?stack|front[- ]?end|back[- ]?end|web engineer|mobile engineer|ios engineer|android engineer|product engineer|(ai|ml|machine learning) engineer|forward deployed engineer|systems development engineer)\b/i
+
+// A US place: a two-letter state after a comma, a state name, or the country itself.
+const US_STATES = 'AL|AK|AZ|AR|CA|CO|CT|DE|DC|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY'
+const US_PLACE = new RegExp(
+  `,\\s*(${US_STATES})\\b|\\b(united states|usa|u\\.s\\.|nyc|sf|alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming)\\b`,
+  'i',
+)
+const inUS = (location: string): boolean =>
+  US_PLACE.test(location) || (/remote/i.test(location) && !NON_US.test(location))
 
 const ENTRY_LEVEL = /\b(new grad|graduate|junior|jr\.?|entry[- ]level|early career|associate|engineer i|developer i|level 1|i)\b(?!\w)/i
 
@@ -75,6 +89,7 @@ export function discoverSettings(): DiscoverSettings {
     locations: getSetting('discover_locations', DISCOVER_DEFAULTS.locations),
     maxAgeDays: Number(getSetting('discover_max_age_days', String(DISCOVER_DEFAULTS.maxAgeDays))) || DISCOVER_DEFAULTS.maxAgeDays,
     useLists: getSetting('discover_use_lists', '1') === '1',
+    anyCityNewGradSwe: getSetting('discover_any_city_new_grad_swe', '1') === '1',
   }
 }
 
@@ -291,7 +306,7 @@ async function fetchList(url: string): Promise<ListPosting[] | null> {
 function marketFor(location: string): string {
   // First region named in the location wins, in REGIONS order.
   const region = REGIONS.find((r) => wordList(r.cities.join(','))!.test(location))
-  return region?.market ?? 'US remote'
+  return region?.market ?? (/remote/i.test(location) ? 'US remote' : 'Other US')
 }
 
 function companyName(board: Board, posting: Posting): string {
@@ -349,8 +364,15 @@ export function startDiscover(): DiscoverProgress {
     ON CONFLICT(id) DO NOTHING
   `)
 
-  const fitsFilters = (p: Pick<Posting, 'title' | 'location'>): boolean => {
+  /**
+   * newGrad: the posting is known to be entry-level (a new-grad list, or the title says so).
+   * realTitle: the posting's own title, when `title` was widened by a list's category.
+   */
+  const fitsFilters = (p: Pick<Posting, 'title' | 'location'>, newGrad = ENTRY_LEVEL.test(p.title), realTitle = p.title): boolean => {
     if (!include?.test(p.title) || exclude?.test(p.title)) return false
+    // Entry-level software engineer roles are worth any US city; everything else must be in your places.
+    // The title itself must say software: lists file some unrelated jobs under "Software".
+    if (settings.anyCityNewGradSwe && newGrad && SWE.test(realTitle) && !exclude?.test(realTitle) && inUS(p.location)) return true
     if (!places?.test(p.location)) return false
     // A remote role naming only places abroad is skipped; one that also names a city you search keeps.
     if (/remote/i.test(p.location) && NON_US.test(p.location) && !REGION_PLACES.test(p.location)) {
@@ -365,7 +387,7 @@ export function startDiscover(): DiscoverProgress {
   // Postings on a public new-grad list are entry-level already: a "Software" one passes on
   // its category even when the title has no keyword from the list (e.g. "SDK Platform Engineer").
   const fitsList = (p: { title: string; location: string; category: string }): boolean =>
-    fitsFilters({ title: p.category === 'Software' && !include?.test(p.title) ? `software engineer ${p.title}` : p.title, location: p.location })
+    fitsFilters({ title: p.category === 'Software' && !include?.test(p.title) ? `software engineer ${p.title}` : p.title, location: p.location }, true, p.title)
 
   /** Why a posting was left out, for the report; null when it matches. */
   const reason = (title: string, location: string, publishedAt: string | null, category?: string): keyof typeof report.boards | null => {

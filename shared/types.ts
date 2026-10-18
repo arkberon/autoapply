@@ -162,6 +162,8 @@ export interface DiscoverSettings {
   maxAgeDays: number
   /** Also search public entry-level job lists. */
   useLists: boolean
+  /** Accept any US city for entry-level software engineer roles; every other role must be in one of the places above. */
+  anyCityNewGradSwe: boolean
 }
 
 export interface PageLink {

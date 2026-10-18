@@ -346,12 +346,14 @@ app.put('/api/discover/settings', async (c) => {
       locations: z.string().max(4000),
       maxAgeDays: z.number().int().min(1).max(365),
       useLists: z.boolean(),
+      anyCityNewGradSwe: z.boolean(),
     })
     .partial()
     .safeParse(await c.req.json())
   if (!body.success) return c.json({ error: 'Invalid search settings' }, 400)
-  const { include, exclude, locations, maxAgeDays, useLists } = body.data
+  const { include, exclude, locations, maxAgeDays, useLists, anyCityNewGradSwe } = body.data
   if (useLists !== undefined) setSetting('discover_use_lists', useLists ? '1' : '0')
+  if (anyCityNewGradSwe !== undefined) setSetting('discover_any_city_new_grad_swe', anyCityNewGradSwe ? '1' : '0')
   if (include !== undefined) setSetting('discover_include', include)
   if (exclude !== undefined) setSetting('discover_exclude', exclude)
   if (locations !== undefined) setSetting('discover_locations', locations)
